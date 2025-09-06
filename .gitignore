@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.env.*
+.DS_Store
+*.log
+
+# Vite/webpack 缓存
+.vite/
+.cache/
+
+# 覆盖率等临时文件
+coverage/
+.nyc_output/
+
+# 编辑器配置
+.idea/
+.vscode/
+
+# OS垃圾
+Thumbs.db
