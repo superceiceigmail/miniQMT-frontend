@@ -20,6 +20,15 @@
           策略管理
         </router-link>
       </li>
+      <li>
+        <router-link
+          to="/position-manager"
+          style="color: inherit; text-decoration: none; padding: 12px 24px; display: block; border-radius: 4px;"
+          active-class="active-link"
+        >
+          仓位管理
+        </router-link>
+      </li>
     </ul>
   </nav>
 </template>

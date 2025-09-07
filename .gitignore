@@ -19,3 +19,4 @@ coverage/
 
 # OS垃圾
 Thumbs.db
+/public/template_account_info/

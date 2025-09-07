@@ -2,36 +2,43 @@
   <div class="strategy-container">
     <div class="strategy-column">
       <h2>策略管理</h2>
-    <!-- 策略操作 -->
-    <div style="margin-bottom: 20px;">
-      <label for="strategy-select">选择策略：</label>
-      <select id="strategy-select" v-model="selectedStrategy">
-        <option value="">请选择策略</option>
-        <option v-for="(strategy, name) in strategies" :key="name" :value="name">
-          {{ name }}
-        </option>
-      </select>
-      <button @click="showAddStrategy = true" style="margin-left:12px;">新增策略</button>
-      <button @click="showEditStrategy = true" :disabled="!selectedStrategy" style="margin-left:6px;">编辑策略</button>
-      <button @click="deleteStrategy" :disabled="!selectedStrategy" style="margin-left:6px;color:#c00;">删除策略</button>
-      <button @click="openChangeDefaultAmount" :disabled="!selectedStrategy" style="margin-left:6px;">一键变更策略默认金额</button>
-      <button @click="exportStrategies" style="margin-left:12px;">导出策略</button>
-      <input type="file" ref="importFile" style="display:none;" @change="importFromFile" accept=".json"/>
-      <button @click="triggerImport" style="margin-left:8px;">导入策略</button>
+      <!-- 策略操作 -->
+      <div style="margin-bottom: 20px;">
+        <label for="strategy-select">选择策略：</label>
+        <select id="strategy-select" v-model="selectedStrategy">
+          <option value="">请选择策略</option>
+          <option v-for="name in strategies.list" :key="name" :value="name">
+            {{ name }}
+          </option>
+        </select>
+        <!-- 上移/下移按钮 -->
+        <button
+          @click="moveStrategy(-1)"
+          :disabled="!selectedStrategy || strategies.list.indexOf(selectedStrategy) === 0"
+          style="margin-left:8px;">↑上移</button>
+        <button
+          @click="moveStrategy(1)"
+          :disabled="!selectedStrategy || strategies.list.indexOf(selectedStrategy) === strategies.list.length - 1"
+          style="margin-left:4px;">↓下移</button>
+        <button @click="showAddStrategy = true" style="margin-left:12px;">新增策略</button>
+        <button @click="showEditStrategy = true" :disabled="!selectedStrategy" style="margin-left:6px;">编辑策略</button>
+        <button @click="deleteStrategy" :disabled="!selectedStrategy" style="margin-left:6px;color:#c00;">删除策略</button>
+        <button @click="openChangeDefaultAmount" :disabled="!selectedStrategy" style="margin-left:6px;">一键变更策略默认金额</button>
+        <button @click="exportStrategies" style="margin-left:12px;">导出策略</button>
+        <input type="file" ref="importFile" style="display:none;" @change="importFromFile" accept=".json"/>
+        <button @click="triggerImport" style="margin-left:8px;">导入策略</button>
+      </div>
     </div>
 
-
-  </div>
-
     <!-- 策略类型和仓位特性显示 -->
-    <div v-if="selectedStrategy && strategies[selectedStrategy]" style="margin-bottom:12px;">
+    <div v-if="selectedStrategy && strategies.map[selectedStrategy]" style="margin-bottom:12px;">
       <div>
         <span style="color:#888;">类型：</span>
-        <span>{{ strategies[selectedStrategy]?.type || '未设置' }}</span>
+        <span>{{ strategies.map[selectedStrategy]?.type || '未设置' }}</span>
       </div>
       <div>
         <span style="color:#888;">仓位特性：</span>
-        <span>{{ positionCharacteristicText(strategies[selectedStrategy]?.position_characteristic) }}</span>
+        <span>{{ positionCharacteristicText(strategies.map[selectedStrategy]?.position_characteristic) }}</span>
       </div>
     </div>
 
@@ -199,8 +206,6 @@
       </table>
     </div>
 
-
-
     <!-- 新增/编辑标的模态框 -->
     <div v-if="showAddTarget || editingTargetIdx !== null" class="modal">
       <div class="modal-content">
@@ -261,33 +266,40 @@
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
-// 默认策略数据（升级为新结构方便测试）
+// 默认策略数据（升级为新结构支持顺序）
 const defaultStrategies = {
-  '科技成长策略': {
-    type: '成长',
-    position_characteristic: 'fixed',
-    targets: [
-      { name: '中证500', default_amount: 10000, hold: false },
-      { name: '创业板指', default_amount: 9000, hold: true }
-    ]
-  },
-  '国债策略': {
-    type: '债券',
-    position_characteristic: 'shrink',
-    targets: [
-      { name: '30年国债', default_amount: 190000, hold: false },
-      { name: '可转债', default_amount: 80000, hold: false }
-    ]
+  list: ['科技成长策略', '国债策略'],
+  map: {
+    '科技成长策略': {
+      type: '成长',
+      position_characteristic: 'fixed',
+      targets: [
+        { name: '中证500', default_amount: 10000, hold: false },
+        { name: '创业板指', default_amount: 9000, hold: true }
+      ]
+    },
+    '国债策略': {
+      type: '债券',
+      position_characteristic: 'shrink',
+      targets: [
+        { name: '30年国债', default_amount: 190000, hold: false },
+        { name: '可转债', default_amount: 80000, hold: false }
+      ]
+    }
   }
 }
 
-const strategies = ref({})
+// 策略数据结构
+const strategies = ref({
+  list: [],
+  map: {}
+})
 const selectedStrategy = ref('')
 const showAddStrategy = ref(false)
 const showEditStrategy = ref(false)
 const newStrategyName = ref('')
 const newStrategyType = ref('')
-const newStrategyPositionCharacteristic = ref('fixed') // 默认固定仓位
+const newStrategyPositionCharacteristic = ref('fixed')
 const strategyNameError = ref('')
 const editStrategyForm = ref({
   name: '',
@@ -302,13 +314,24 @@ const targetFormError = ref('')
 
 const positions = ref([])  // 持仓数组
 const tradePlans = ref([]) // 变更计划数组
-const showSwitchModal = ref(false) // 是否显示切换标的模态框
-const currentSwitchIdx = ref(null) // 当前正在切换的标的索引
-const switchTargetName = ref('') // 切换目标标的名称
-const finalTradePlan = ref([]) // 最终交易计划
-const showFinalPlan = ref(false) // 是否显示最终交易计划
-const assetInfo = ref({}) // 资产信息
-const planAdjustment = ref(null) // 计划调整信息
+const showSwitchModal = ref(false)
+const currentSwitchIdx = ref(null)
+const switchTargetName = ref('')
+const finalTradePlan = ref([])
+const showFinalPlan = ref(false)
+const assetInfo = ref({})
+const planAdjustment = ref(null)
+
+// 排序相关
+function moveStrategy(direction) {
+  const idx = strategies.value.list.indexOf(selectedStrategy.value)
+  if (idx === -1) return
+  const newIdx = idx + direction
+  if (newIdx < 0 || newIdx >= strategies.value.list.length) return
+  const arr = strategies.value.list
+  ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+  saveToStorage()
+}
 
 // 仓位特性文本映射
 function positionCharacteristicText(value) {
@@ -324,7 +347,6 @@ function positionCharacteristicText(value) {
 const importFile = ref(null)
 function exportStrategies() {
   const data = localStorage.getItem('strategies') || '{}'
-  // 使用2个空格作为缩进格式化JSON
   const formattedData = JSON.stringify(JSON.parse(data), null, 2)
   const blob = new Blob([formattedData], {type: 'application/json'})
   const url = URL.createObjectURL(blob)
@@ -343,25 +365,12 @@ function importFromFile(event) {
   const reader = new FileReader()
   reader.onload = function(e) {
     try {
-      const obj = JSON.parse(e.target.result)
-      if (typeof obj === 'object') {
-        // 兼容迁移：如果导入的是老数组结构
-        Object.keys(obj).forEach(k => {
-          if (Array.isArray(obj[k])) {
-            obj[k] = {
-              type: '',
-              position_characteristic: 'fixed', // 默认值
-              targets: obj[k]
-            }
-          }
-        })
-        localStorage.setItem('strategies', JSON.stringify(obj))
-        strategies.value = obj
-        selectedStrategy.value = Object.keys(obj)[0] || ''
-        alert('导入成功！')
-      } else {
-        alert('导入内容格式有误！')
-      }
+      let obj = JSON.parse(e.target.result)
+      obj = migrateStrategies(obj)
+      localStorage.setItem('strategies', JSON.stringify(obj))
+      strategies.value = obj
+      selectedStrategy.value = strategies.value.list[0] || ''
+      alert('导入成功！')
     } catch {
       alert('JSON解析失败')
     }
@@ -376,7 +385,7 @@ const unifiedAmount = ref(null)
 
 function openChangeDefaultAmount() {
   if (!selectedStrategy.value) return
-  changeAmountList.value = (strategies.value[selectedStrategy.value]?.targets || []).map(item => ({
+  changeAmountList.value = (strategies.value.map[selectedStrategy.value]?.targets || []).map(item => ({
     name: item.name,
     value: item.default_amount
   }))
@@ -391,7 +400,7 @@ function applyUnifiedAmount() {
   }
 }
 function saveChangeDefaultAmount() {
-  const targets = strategies.value[selectedStrategy.value]?.targets
+  const targets = strategies.value.map[selectedStrategy.value]?.targets
   changeAmountList.value.forEach(editItem => {
     const t = targets.find(x => x.name === editItem.name)
     if (t) t.default_amount = editItem.value
@@ -428,31 +437,42 @@ function getMarketValue(target) {
   return Number(found?.market_value) || 0;
 }
 
-// 数据迁移兼容：首次加载时自动从数组结构转新结构
+// 数据迁移兼容：支持对象/数组/新结构
 function migrateStrategies(raw) {
-  if (!raw) return {}
-  let changed = false
-  Object.keys(raw).forEach(k => {
-    if (Array.isArray(raw[k])) {
-      raw[k] = {
-        type: '',
-        position_characteristic: 'fixed', // 默认值
-        targets: raw[k]
+  if (!raw) return { list: [], map: {} }
+  if (raw.list && raw.map) return raw
+  const map = {}
+  let list = []
+  if (Array.isArray(raw)) {
+    list = []
+    raw.forEach((item, i) => {
+      const name = item.name || `策略${i+1}`
+      list.push(name)
+      map[name] = { ...item }
+    })
+  } else {
+    list = Object.keys(raw)
+    list.forEach(name => {
+      if (Array.isArray(raw[name])) {
+        map[name] = {
+          type: '',
+          position_characteristic: 'fixed',
+          targets: raw[name]
+        }
+      } else {
+        map[name] = { ...raw[name] }
       }
-      changed = true
-    }
-  })
-  return raw
+    })
+  }
+  return { list, map }
 }
 
 onMounted(() => {
   const saved = localStorage.getItem('strategies')
   if (saved) {
     let raw = JSON.parse(saved)
-    // 数据迁移
     const migrated = migrateStrategies(raw)
     strategies.value = migrated
-    // 若有迁移，自动覆盖回 localStorage
     if (JSON.stringify(migrated) !== saved) {
       localStorage.setItem('strategies', JSON.stringify(migrated))
     }
@@ -460,13 +480,13 @@ onMounted(() => {
     strategies.value = JSON.parse(JSON.stringify(defaultStrategies))
     localStorage.setItem('strategies', JSON.stringify(strategies.value))
   }
-  selectedStrategy.value = Object.keys(strategies.value)[0] || ''
+  selectedStrategy.value = strategies.value.list[0] || ''
   loadPositions()
 })
 
 watchEffect(() => {
   if (showEditStrategy.value && selectedStrategy.value) {
-    const strategy = strategies.value[selectedStrategy.value]
+    const strategy = strategies.value.map[selectedStrategy.value]
     editStrategyForm.value = {
       name: selectedStrategy.value,
       type: strategy.type || '',
@@ -477,7 +497,7 @@ watchEffect(() => {
 
 const currentTargets = computed(() => {
   if (!selectedStrategy.value) return []
-  return strategies.value[selectedStrategy.value]?.targets || []
+  return strategies.value.map[selectedStrategy.value]?.targets || []
 })
 
 function saveToStorage() {
@@ -490,11 +510,12 @@ function addStrategy() {
     strategyNameError.value = '策略名称不能为空'
     return
   }
-  if (strategies.value[name]) {
+  if (strategies.value.map[name]) {
     strategyNameError.value = '策略已存在'
     return
   }
-  strategies.value[name] = {
+  strategies.value.list.push(name)
+  strategies.value.map[name] = {
     type: newStrategyType.value.trim(),
     position_characteristic: newStrategyPositionCharacteristic.value,
     targets: []
@@ -503,7 +524,7 @@ function addStrategy() {
   selectedStrategy.value = name
   newStrategyName.value = ''
   newStrategyType.value = ''
-  newStrategyPositionCharacteristic.value = 'fixed' // 重置为默认值
+  newStrategyPositionCharacteristic.value = 'fixed'
   showAddStrategy.value = false
   strategyNameError.value = ''
 }
@@ -516,29 +537,21 @@ function saveStrategyEdit() {
     editStrategyError.value = '策略名称不能为空'
     return
   }
-
-  // 检查名称是否已存在（且不是当前策略）
-  if (newName !== oldName && strategies.value[newName]) {
+  if (newName !== oldName && strategies.value.map[newName]) {
     editStrategyError.value = '策略名称已存在'
     return
   }
-
-  // 获取原策略数据
-  const strategyData = strategies.value[oldName]
-
-  // 如果名称改变了，需要先删除旧的再添加新的
+  const strategyData = strategies.value.map[oldName]
   if (newName !== oldName) {
-    delete strategies.value[oldName]
+    const idx = strategies.value.list.indexOf(oldName)
+    if (idx >= 0) strategies.value.list[idx] = newName
+    delete strategies.value.map[oldName]
   }
-
-  // 更新策略数据
-  strategies.value[newName] = {
+  strategies.value.map[newName] = {
     type: editStrategyForm.value.type.trim(),
     position_characteristic: editStrategyForm.value.position_characteristic,
     targets: strategyData.targets
   }
-
-  // 更新选中策略
   selectedStrategy.value = newName
   saveToStorage()
   showEditStrategy.value = false
@@ -548,9 +561,10 @@ function saveStrategyEdit() {
 function deleteStrategy() {
   if (!selectedStrategy.value) return
   if (!confirm(`确定要删除策略【${selectedStrategy.value}】吗？`)) return
-  delete strategies.value[selectedStrategy.value]
-  const keys = Object.keys(strategies.value)
-  selectedStrategy.value = keys[0] || ''
+  const idx = strategies.value.list.indexOf(selectedStrategy.value)
+  if (idx >= 0) strategies.value.list.splice(idx, 1)
+  delete strategies.value.map[selectedStrategy.value]
+  selectedStrategy.value = strategies.value.list[0] || ''
   saveToStorage()
 }
 
@@ -572,7 +586,7 @@ function saveTarget() {
     targetFormError.value = '默认金额需大于0'
     return
   }
-  const targets = strategies.value[selectedStrategy.value].targets
+  const targets = strategies.value.map[selectedStrategy.value].targets
   if (editingTargetIdx.value !== null) {
     targets[editingTargetIdx.value] = { ...form }
     editingTargetIdx.value = null
@@ -598,7 +612,7 @@ function cancelTargetEdit() {
 
 function deleteTarget(idx) {
   if (!confirm(`确定要删除标的【${currentTargets.value[idx].name}】吗？`)) return
-  strategies.value[selectedStrategy.value].targets.splice(idx, 1)
+  strategies.value.map[selectedStrategy.value].targets.splice(idx, 1)
   saveToStorage()
 }
 
@@ -682,7 +696,6 @@ function deleteTradePlan(index) {
 function adjustPlanBasedOnFunds() {
   if (!assetInfo.value.total_asset || !assetInfo.value.available) return
 
-  // 计算总买入和总卖出金额
   let totalBuy = 0
   let totalSell = 0
   finalTradePlan.value.forEach(plan => {
@@ -693,27 +706,22 @@ function adjustPlanBasedOnFunds() {
     }
   })
 
-  // 计算执行后可用资金
   const currentAvailable = Number(assetInfo.value.available)
   const postExecutionAvailable = currentAvailable - totalBuy + totalSell
 
-  // 检查是否需要调整
   if (postExecutionAvailable < 10000) {
-    // 资金不足，需要收缩买入计划
     const deficit = 10000 - postExecutionAvailable
     adjustBuyPlans('shrink', deficit)
   } else if (postExecutionAvailable > 20000) {
-    // 资金过多，可以拉伸买入计划
     const surplus = postExecutionAvailable - 20000
     adjustBuyPlans('stretch', surplus)
   }
 }
 
 function adjustBuyPlans(adjustType, amount) {
-  // 获取可调整的买入计划（自动收缩/拉伸策略）
   const adjustablePlans = finalTradePlan.value.filter(plan =>
     plan.action === '买入' &&
-    strategies.value[plan.strategy]?.position_characteristic === adjustType
+    strategies.value.map[plan.strategy]?.position_characteristic === adjustType
   )
 
   if (adjustablePlans.length === 0) {
@@ -724,20 +732,16 @@ function adjustBuyPlans(adjustType, amount) {
     return
   }
 
-  // 计算总可调整金额
   const totalAdjustableAmount = adjustablePlans.reduce((sum, plan) => sum + plan.amount, 0)
 
-  // 计算调整比例
   const adjustRatio = adjustType === 'shrink'
     ? Math.max(0, (totalAdjustableAmount - amount) / totalAdjustableAmount)
     : 1 + (amount / totalAdjustableAmount)
 
-  // 应用调整
   adjustablePlans.forEach(plan => {
     plan.amount = Math.round(plan.amount * adjustRatio)
   })
 
-  // 更新调整信息
   planAdjustment.value = {
     message: `已${adjustType === 'shrink' ? '收缩' : '拉伸'}买入计划，调整比例: ${(adjustRatio * 100).toFixed(2)}%`,
     adjusted: true,
@@ -747,7 +751,6 @@ function adjustBuyPlans(adjustType, amount) {
 }
 
 async function generateTradePlan() {
-  // 加载资产信息
   try {
     const response = await fetch('/template_account_info/template_account_asset_info.json?_t=' + Date.now())
     if (response.ok) {
@@ -758,7 +761,6 @@ async function generateTradePlan() {
     assetInfo.value = {}
   }
 
-  // 按标的合并所有操作
   const mergedPlans = {}
 
   tradePlans.value.forEach(plan => {
@@ -781,7 +783,6 @@ async function generateTradePlan() {
     }
   })
 
-  // 处理卖出操作，考虑市值因素
   const positionsMap = {}
   positions.value.forEach(p => {
     positionsMap[p.stock_name] = Number(p.market_value)
@@ -789,23 +790,19 @@ async function generateTradePlan() {
 
   finalTradePlan.value = Object.values(mergedPlans)
     .map(plan => {
-      // 计算净买入/卖出
       const netAmount = plan.buy - plan.sell
 
-      // 如果是卖出操作
       if (netAmount < 0) {
         const marketValue = positionsMap[plan.name] || 0
 
-        // 市值为0不允许卖出
         if (marketValue <= 0) {
           return null
         }
 
-        // 市值大于卖出金额的110%
         if (marketValue > Math.abs(netAmount) * 1.1) {
           return {
             name: plan.name,
-            amount: -marketValue * 1.03, // 卖出当前市值的103%
+            amount: -marketValue * 1.03,
             action: '卖出',
             strategy: plan.strategy,
             adjusted: true
@@ -821,9 +818,8 @@ async function generateTradePlan() {
         adjusted: false
       }
     })
-    .filter(plan => plan && Math.abs(plan.amount) > 0) // 过滤掉金额为0的项
+    .filter(plan => plan && Math.abs(plan.amount) > 0)
 
-  // 计算总买入和总卖出金额
   let totalBuy = 0
   let totalSell = 0
   finalTradePlan.value.forEach(plan => {
@@ -834,17 +830,13 @@ async function generateTradePlan() {
     }
   })
 
-  // 计算执行后资金
   const currentAvailable = Number(assetInfo.value.cash)
   const postExecutionAvailable = currentAvailable - totalBuy + totalSell
 
-  // 检查是否需要调整
   if (postExecutionAvailable < 10000) {
-    // 资金不足，需要收缩买入计划
     const deficit = 10000 - postExecutionAvailable
     adjustBuyPlans('shrink', deficit)
   } else if (postExecutionAvailable > 20000) {
-    // 资金过多，可以拉伸买入计划
     const surplus = postExecutionAvailable - 20000
     adjustBuyPlans('stretch', surplus)
   }
@@ -862,13 +854,10 @@ watchEffect(() => {
 
 function exportFinalPlan() {
   try {
-    // 1. 根据变更列表更新标的持有状态
     updateTargetHoldStatus();
 
-    // 2. 获取当前总资产
     const totalAsset = assetInfo.value.total_asset || 0;
 
-    // 3. 构造符合要求的JSON数据结构
     const exportData = {
       sell_stocks_info: finalTradePlan.value
         .filter(plan => plan.action === '卖出')
@@ -884,10 +873,8 @@ function exportFinalPlan() {
         }))
     };
 
-    // 将数据转换为格式化的JSON字符串
     const jsonStr = JSON.stringify(exportData, null, 2);
 
-    // 使用Clipboard API复制到剪贴板
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(jsonStr).then(() => {
         alert('交易计划已复制到剪贴板，标的持有状态已更新！');
@@ -896,7 +883,6 @@ function exportFinalPlan() {
         fallbackCopyTextToClipboard(jsonStr);
       });
     } else {
-      // 降级方案
       fallbackCopyTextToClipboard(jsonStr);
     }
   } catch (error) {
@@ -906,34 +892,27 @@ function exportFinalPlan() {
 }
 
 function updateTargetHoldStatus() {
-  // 遍历变更列表中的每个计划
   tradePlans.value.forEach(plan => {
-    // 检查是否存在对应的策略
-    if (strategies.value[plan.strategy]) {
-      // 根据操作类型更新标的持有状态
+    if (strategies.value.map[plan.strategy]) {
       if (plan.action === '买入') {
-        // 买入操作：找到对应的标的并设置为持有状态
-        const target = strategies.value[plan.strategy].targets.find(t => t.name === plan.target);
+        const target = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.target);
         if (target) {
           target.hold = true;
         }
       } else if (plan.action === '卖出') {
-        // 卖出操作：找到对应的标的并设置为未持有状态
-        const target = strategies.value[plan.strategy].targets.find(t => t.name === plan.target);
+        const target = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.target);
         if (target) {
           target.hold = false;
         }
       } else if (plan.action === '切换') {
-        // 切换操作：将源标的设置为未持有，目标标的设置为持有
-        const fromTarget = strategies.value[plan.strategy].targets.find(t => t.name === plan.fromTarget);
-        const toTarget = strategies.value[plan.strategy].targets.find(t => t.name === plan.toTarget);
+        const fromTarget = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.fromTarget);
+        const toTarget = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.toTarget);
         if (fromTarget) fromTarget.hold = false;
         if (toTarget) toTarget.hold = true;
       }
     }
   });
 
-  // 保存更新后的状态到本地存储
   saveToStorage();
 }
 
@@ -954,7 +933,8 @@ function fallbackCopyTextToClipboard(text) {
     alert('复制失败，请手动复制以下内容:\n' + text);
   }
   document.body.removeChild(textArea);
-}</script>
+}
+</script>
 
 <style scoped>
 .strategy-container {

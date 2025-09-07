@@ -83,14 +83,18 @@ const stockSourceStrategyMap = computed(() => {
   const result = {};
   allStockNamesWithCodes.value.forEach(({name: stockName}) => {
     result[stockName] = [];
-    Object.entries(strategies.value).forEach(([strategyName, strategyObj]) => {
+    // 兼容新老结构：map 或直接对象
+    Object.entries(strategies.value.map ?? strategies.value).forEach(([strategyName, strategyObj]) => {
       (strategyObj.targets || []).forEach(t => {
+        // 打印每次尝试匹配
+        console.log(`[匹配] 持仓标的: ${JSON.stringify(stockName)}, 策略标的: ${JSON.stringify(t.name)}, 相等?`, t.name === stockName, '持有:', t.hold, '金额:', t.default_amount);
         if (t.name === stockName && t.hold && t.default_amount > 0) {
           result[stockName].push({ name: strategyName, amount: t.default_amount });
         }
       });
     });
   });
+  console.log('[账户持仓页面] stockSourceStrategyMap 结果:', JSON.stringify(result, null, 2));
   return result;
 });
 
@@ -177,7 +181,7 @@ const chartSeries = computed(() => {
     data: allStockNamesWithCodes.value.map(item => stockMarketValueMap.value[item.name] || 0),
     itemStyle: { color: '#4e77f4' },
     barGap: '30%',
-    barWidth: 12, // 明显变粗
+    barWidth: 8, // 明显变粗
     label: { show: true, position: 'right', formatter: '{c}' }
   };
 
@@ -241,16 +245,35 @@ onMounted(async () => {
   try {
     // 读取策略缓存
     const saved = localStorage.getItem('strategies');
-    if (saved) strategies.value = JSON.parse(saved);
+    if (saved) {
+      strategies.value = JSON.parse(saved);
+      console.log('[账户持仓页面] 读取到的 strategies:', JSON.stringify(strategies.value, null, 2));
+      // 打印所有策略下所有标的名
+      Object.entries(strategies.value.map ?? strategies.value).forEach(([strategyName, strategyObj]) => {
+        (strategyObj.targets || []).forEach(t => {
+          console.log(`[策略:${strategyName}] 标的:`, JSON.stringify(t.name), '持有:', t.hold, '默认金额:', t.default_amount);
+        });
+      });
+    } else {
+      console.log('[账户持仓页面] localStorage 没有 strategies');
+    }
 
-    // 原有资产和持仓数据读取
+    // 资产和持仓数据
     const assetResp = await fetch("/template_account_info/template_account_asset_info.json");
     if (!assetResp.ok) throw new Error("账户资产文件读取失败");
     asset.value = await assetResp.json();
+    console.log('[账户持仓页面] 读取到的 asset:', asset.value);
 
     const posResp = await fetch("/template_account_info/template_account_position_info.json");
     if (!posResp.ok) throw new Error("持仓文件读取失败");
     positions.value = await posResp.json();
+    console.log('[账户持仓页面] 读取到的 positions:', positions.value);
+
+    // 打印当前有持仓的标的名（去掉volume为0的）
+    const arr = Array.isArray(positions.value) ? positions.value : (positions.value.positions || []);
+    arr.filter(pos => Number(pos.volume) > 0).forEach(pos => {
+      console.log('[账户持仓页面] 持仓标的:', JSON.stringify(pos.stock_name), '代码:', pos.stock_code);
+    });
 
     loading.value = false;
   } catch (e) {
