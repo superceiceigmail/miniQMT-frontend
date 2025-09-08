@@ -228,7 +228,9 @@
       <div>当前总资产: {{ assetInfo.total_asset.toFixed(2) }}</div>
       <div>当前可用资金: {{ assetInfo.cash.toFixed(2) }}</div>
       <div>当前持仓市值: {{ assetInfo.market_value.toFixed(2) }}</div>
-
+      <div v-if="assetInfo.postExecutionAvailable !== undefined">
+        预计执行后可用资金: {{ assetInfo.postExecutionAvailable.toFixed(2) }}
+      </div>
       <div v-if="planAdjustment" class="adjustment-info">
         <h4>计划调整</h4>
         <div>{{ planAdjustment.message }}</div>
@@ -242,7 +244,6 @@
       <table border="1" cellpadding="8">
         <thead>
           <tr>
-            <th>策略</th>
             <th>标的</th>
             <th>操作</th>
             <th>金额</th>
@@ -251,7 +252,6 @@
         </thead>
         <tbody>
           <tr v-for="(plan, idx) in finalTradePlan" :key="idx">
-            <td>{{ plan.strategy }}</td>
             <td>{{ plan.name }}</td>
             <td>{{ plan.action }}</td>
             <td>{{ Math.abs(plan.amount).toFixed(2) }}</td>
@@ -262,7 +262,6 @@
     </div>
   </div>
 </template>
-
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
@@ -719,6 +718,7 @@ function adjustPlanBasedOnFunds() {
 }
 
 function adjustBuyPlans(adjustType, amount) {
+  // 只拉伸“自动拉伸”类型（即position_characteristic==='stretch'）
   const adjustablePlans = finalTradePlan.value.filter(plan =>
     plan.action === '买入' &&
     strategies.value.map[plan.strategy]?.position_characteristic === adjustType
@@ -799,7 +799,11 @@ async function generateTradePlan() {
           return null
         }
 
-        if (marketValue > Math.abs(netAmount) * 1.1) {
+        // 市值调整逻辑：市值 > 计划卖出金额1.01倍 且 < 1.1倍，才按市值*1.03
+        if (
+          marketValue > Math.abs(netAmount) * 1.01 &&
+          marketValue < Math.abs(netAmount) * 1.1
+        ) {
           return {
             name: plan.name,
             amount: -marketValue * 1.03,
@@ -820,6 +824,7 @@ async function generateTradePlan() {
     })
     .filter(plan => plan && Math.abs(plan.amount) > 0)
 
+  // 计算总买入和卖出金额
   let totalBuy = 0
   let totalSell = 0
   finalTradePlan.value.forEach(plan => {
@@ -830,9 +835,15 @@ async function generateTradePlan() {
     }
   })
 
+  // 当前可用资金（用cash字段）
   const currentAvailable = Number(assetInfo.value.cash)
+  // 预计执行后可用资金
   const postExecutionAvailable = currentAvailable - totalBuy + totalSell
 
+  // 保存到 assetInfo 以便在界面展示
+  assetInfo.value.postExecutionAvailable = postExecutionAvailable
+
+  // 拉伸/收缩逻辑
   if (postExecutionAvailable < 10000) {
     const deficit = 10000 - postExecutionAvailable
     adjustBuyPlans('shrink', deficit)
