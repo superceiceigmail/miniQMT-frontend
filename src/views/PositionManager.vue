@@ -150,20 +150,40 @@ const pieOption = computed(() => {
   };
 });
 
-// ----------- 饼图二数据: 策略规划分布（只统计有持仓标的） -----------
+// ========== 只统计有持仓标的的 default_amount ==========
+const plannedHoldingAmount = computed(() => {
+  let sum = 0;
+  for (const [strategyName, arr] of Object.entries(strategyHoldingMap.value)) {
+    arr.forEach(target => {
+      sum += Number(target.default_amount) || 0;
+    });
+  }
+  return sum;
+});
+
+// 规划现金 = 总资产 - 所有“有持仓标的”的 default_amount 之和 - 国金理财
+const planningCash = computed(() => {
+  const totalAsset = Number(asset.value?.total_asset ?? asset.total_asset) || 0;
+  const guojin = otherAmount.value || 0;
+  const planned = plannedHoldingAmount.value || 0;
+  if (!totalAsset) return 0;
+  return Math.max(totalAsset - planned - guojin, 0);
+});
+
+// ----------- 饼图二数据: 策略规划分布 -----------
 const planPieData = computed(() => {
+  if (!asset.value || !asset.value.total_asset) return [];
   const data = [];
   for (const [strategyName, arr] of Object.entries(strategyHoldingMap.value)) {
     let total = 0;
     arr.forEach(target => {
-      if (target.default_amount > 0) total += Number(target.default_amount);
+      total += Number(target.default_amount) || 0;
     });
     if (total > 0) data.push({ name: strategyName, value: total });
   }
-  // 理财与现金
-  const other = otherAmount.value;
-  const cash = Number(asset.value?.cash ?? asset.cash) || 0;
-  if (other > 0) data.push({ name: '国金理财', value: other });
+  const guojin = otherAmount.value || 0;
+  if (guojin > 0) data.push({ name: '国金理财', value: guojin });
+  const cash = planningCash.value || 0;
   if (cash > 0) data.push({ name: '规划现金', value: cash });
   return data;
 });
@@ -187,12 +207,11 @@ const planPieOption = computed(() => ({
       type: 'pie',
       radius: ['40%', '70%'],
       avoidLabelOverlap: false,
-      minShowLabelAngle: 0, // 尽量全部显示标签，但ECharts有时仍有省略
+      minShowLabelAngle: 0,
       label: {
         show: true,
         position: 'outside',
         formatter: '{b}\n{d}%'
-        // 可加 overflow: 'none' 但效果有限
       },
       labelLine: { show: true },
       data: planPieData.value
