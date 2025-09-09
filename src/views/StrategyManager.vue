@@ -708,8 +708,8 @@ function adjustPlanBasedOnFunds() {
   const currentAvailable = Number(assetInfo.value.available)
   const postExecutionAvailable = currentAvailable - totalBuy + totalSell
 
-  if (postExecutionAvailable < 10000) {
-    const deficit = 10000 - postExecutionAvailable
+  if (postExecutionAvailable < 1000) {
+    const deficit = 1000 - postExecutionAvailable
     adjustBuyPlans('shrink', deficit)
   } else if (postExecutionAvailable > 20000) {
     const surplus = postExecutionAvailable - 20000
@@ -764,22 +764,44 @@ async function generateTradePlan() {
   const mergedPlans = {}
 
   tradePlans.value.forEach(plan => {
-    const targetName = plan.action === '切换' ? plan.fromTarget : plan.target
-    if (!mergedPlans[targetName]) {
-      mergedPlans[targetName] = {
-        name: targetName,
-        buy: 0,
-        sell: 0,
-        strategy: plan.strategy
+    if (plan.action === '切换') {
+      // 卖出fromTarget
+      if (!mergedPlans[plan.fromTarget]) {
+        mergedPlans[plan.fromTarget] = {
+          name: plan.fromTarget,
+          buy: 0,
+          sell: 0,
+          strategy: plan.strategy
+        }
       }
-    }
+      mergedPlans[plan.fromTarget].sell += plan.amount
 
-    if (plan.action === '买入') {
-      mergedPlans[targetName].buy += plan.amount
-    } else if (plan.action === '卖出') {
-      mergedPlans[targetName].sell += plan.amount
-    } else if (plan.action === '切换') {
-      mergedPlans[targetName].sell += plan.amount
+      // 买入toTarget
+      if (!mergedPlans[plan.toTarget]) {
+        mergedPlans[plan.toTarget] = {
+          name: plan.toTarget,
+          buy: 0,
+          sell: 0,
+          strategy: plan.strategy
+        }
+      }
+      mergedPlans[plan.toTarget].buy += plan.amount
+
+    } else {
+      const targetName = plan.target
+      if (!mergedPlans[targetName]) {
+        mergedPlans[targetName] = {
+          name: targetName,
+          buy: 0,
+          sell: 0,
+          strategy: plan.strategy
+        }
+      }
+      if (plan.action === '买入') {
+        mergedPlans[targetName].buy += plan.amount
+      } else if (plan.action === '卖出') {
+        mergedPlans[targetName].sell += plan.amount
+      }
     }
   })
 
