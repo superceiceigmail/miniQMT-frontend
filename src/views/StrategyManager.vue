@@ -756,6 +756,7 @@ async function generateTradePlan() {
     if (response.ok) {
       assetInfo.value = await response.json()
     }
+    console.log('finalTradePlan', JSON.stringify(finalTradePlan.value, null, 2))
   } catch (e) {
     console.error('加载资产信息失败:', e)
     assetInfo.value = {}
