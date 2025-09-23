@@ -1,0 +1,38 @@
+name: Deploy to Alibaba Cloud OSS
+
+on:
+  push:
+    branches:
+      - main  # 监听 main 分支推送，如需其它分支请修改
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'  # 可根据你的项目需求调整
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Install ossutil
+        uses: manyuanrong/setup-ossutil@v2
+        with:
+          endpoint: oss-cn-shanghai.aliyuncs.com
+
+      - name: Upload to OSS
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          ossutil config -e oss-cn-shanghai.aliyuncs.com -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
+          ossutil cp -rf ./dist oss://miniqmt-frontend/
