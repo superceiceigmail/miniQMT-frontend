@@ -25,7 +25,7 @@ jobs:
         run: npm run build
 
       - name: Install ossutil
-        uses: manyuanrong/setup-ossutil@v2
+        uses: manyuanrong/setup-ossutil@v1
         with:
           endpoint: oss-cn-shanghai.aliyuncs.com
 
