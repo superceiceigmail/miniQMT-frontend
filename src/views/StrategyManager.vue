@@ -265,6 +265,15 @@
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
+// ======= 策略缓存key变量化逻辑 =======
+const strategyType = ref('conservative'); // 'conservative' 或 'aggressive'，或根据实际业务动态赋值
+const strategyCacheKey = computed(() => {
+  return strategyType.value === 'conservative'
+    ? 'strategies_conservative'
+    : 'strategies_aggressive';
+});
+// =====================================
+
 // 默认策略数据（升级为新结构支持顺序）
 const defaultStrategies = {
   list: ['科技成长策略', '国债策略'],
@@ -345,7 +354,7 @@ function positionCharacteristicText(value) {
 // 导入导出相关
 const importFile = ref(null)
 function exportStrategies() {
-  const data = localStorage.getItem('strategies') || '{}'
+  const data = localStorage.getItem(strategyCacheKey.value) || '{}'
   const formattedData = JSON.stringify(JSON.parse(data), null, 2)
   const blob = new Blob([formattedData], {type: 'application/json'})
   const url = URL.createObjectURL(blob)
@@ -366,7 +375,7 @@ function importFromFile(event) {
     try {
       let obj = JSON.parse(e.target.result)
       obj = migrateStrategies(obj)
-      localStorage.setItem('strategies', JSON.stringify(obj))
+      localStorage.setItem(strategyCacheKey.value, JSON.stringify(obj))
       strategies.value = obj
       selectedStrategy.value = strategies.value.list[0] || ''
       alert('导入成功！')
@@ -467,17 +476,17 @@ function migrateStrategies(raw) {
 }
 
 onMounted(() => {
-  const saved = localStorage.getItem('strategies')
+  const saved = localStorage.getItem(strategyCacheKey.value)
   if (saved) {
     let raw = JSON.parse(saved)
     const migrated = migrateStrategies(raw)
     strategies.value = migrated
     if (JSON.stringify(migrated) !== saved) {
-      localStorage.setItem('strategies', JSON.stringify(migrated))
+      localStorage.setItem(strategyCacheKey.value, JSON.stringify(migrated))
     }
   } else {
     strategies.value = JSON.parse(JSON.stringify(defaultStrategies))
-    localStorage.setItem('strategies', JSON.stringify(strategies.value))
+    localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value))
   }
   selectedStrategy.value = strategies.value.list[0] || ''
   loadPositions()
@@ -500,7 +509,7 @@ const currentTargets = computed(() => {
 })
 
 function saveToStorage() {
-  localStorage.setItem('strategies', JSON.stringify(strategies.value))
+  localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value))
 }
 
 function addStrategy() {

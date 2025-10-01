@@ -69,6 +69,15 @@ const loading = ref(true);
 const error = ref("");
 const strategies = ref({});
 
+// ======= 策略缓存key变量化逻辑 =======
+const strategyType = ref('conservative'); // 'conservative' 或 'aggressive'，或根据实际业务动态赋值
+const strategyCacheKey = computed(() => {
+  return strategyType.value === 'conservative'
+    ? 'strategies_conservative'
+    : 'strategies_aggressive';
+});
+// =====================================
+
 // 只保留有持仓的股票
 const filteredPositions = computed(() => {
   const arr = Array.isArray(positions.value) ? positions.value : (positions.value.positions || []);
@@ -263,7 +272,7 @@ function onConfirmAdjust() {
     }
   }
   if (changed) {
-    localStorage.setItem('strategies', JSON.stringify(strategies.value));
+    localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value));
   }
   showAdjustModal.value = false;
 }
@@ -274,7 +283,7 @@ function num(val) {
 
 onMounted(async () => {
   try {
-    const saved = localStorage.getItem('strategies');
+    const saved = localStorage.getItem(strategyCacheKey.value);
     if (saved) strategies.value = JSON.parse(saved);
     const assetResp = await fetch("/template_account_info/template_account_asset_info.json");
     if (!assetResp.ok) throw new Error("账户资产文件读取失败");

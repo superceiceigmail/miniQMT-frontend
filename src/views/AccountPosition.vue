@@ -55,6 +55,16 @@ const loading = ref(true);
 const error = ref("");
 const strategies = ref({});
 
+// ======= 策略缓存key变量化逻辑 =======
+// 你可以通过修改 strategyCacheKey 的值来切换缓存（比如和下拉框、url参数、配置项等联动）
+const strategyType = ref('conservative'); // 'conservative' 或 'aggressive'，或根据实际业务动态赋值
+const strategyCacheKey = computed(() => {
+  return strategyType.value === 'conservative'
+    ? 'strategies_conservative'
+    : 'strategies_aggressive';
+});
+// =====================================
+
 function num(val) {
   return val !== undefined ? Number(val).toLocaleString() : "--";
 }
@@ -300,8 +310,8 @@ const pieDetailOption = computed(() => ({
 
 onMounted(async () => {
   try {
-    // 读取策略缓存
-    const saved = localStorage.getItem('strategies');
+    // 读取策略缓存（变量化key）
+    const saved = localStorage.getItem(strategyCacheKey.value);
     if (saved) {
       strategies.value = JSON.parse(saved);
     }
