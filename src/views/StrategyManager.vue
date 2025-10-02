@@ -266,12 +266,16 @@
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
 // ======= 策略缓存key变量化逻辑 =======
-const strategyType = ref('conservative'); // 'conservative' 或 'aggressive'，或根据实际业务动态赋值
+
+const strategyType = ref(localStorage.getItem('strategyType') || 'conservative')
 const strategyCacheKey = computed(() => {
-  return strategyType.value === 'conservative'
-    ? 'strategies_conservative'
-    : 'strategies_aggressive';
-});
+  switch(strategyType.value) {
+    case 'conservative': return 'strategies_conservative';
+    case 'aggressive': return 'strategies_aggressive';
+    case 'ultra': return 'strategies_ultra';
+    default: return `strategies_${strategyType.value}`;
+  }
+})
 // =====================================
 
 // 默认策略数据（升级为新结构支持顺序）
