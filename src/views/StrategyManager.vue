@@ -231,6 +231,9 @@
       <div v-if="assetInfo.postExecutionAvailable !== undefined">
         预计执行后可用资金: {{ assetInfo.postExecutionAvailable.toFixed(2) }}
       </div>
+      <div>
+        是否可以直接买入: <span :style="{color: canDirectlyBuy ? 'green':'red'}">{{ canDirectlyBuy ? '是' : '否' }}</span>
+      </div>
       <div v-if="planAdjustment" class="adjustment-info">
         <h4>计划调整</h4>
         <div>{{ planAdjustment.message }}</div>
@@ -266,7 +269,6 @@
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
 // ======= 策略缓存key变量化逻辑 =======
-
 const strategyType = ref(localStorage.getItem('strategyType') || 'conservative')
 const strategyCacheKey = computed(() => {
   switch(strategyType.value) {
@@ -333,6 +335,7 @@ const finalTradePlan = ref([])
 const showFinalPlan = ref(false)
 const assetInfo = ref({})
 const planAdjustment = ref(null)
+const canDirectlyBuy = ref(true) // 新增：是否可以直接买入
 
 // 排序相关
 function moveStrategy(direction) {
@@ -888,7 +891,15 @@ async function generateTradePlan() {
     adjustBuyPlans('stretch', surplus)
   }
 
-  showFinalPlan.value = true
+    // 新增：计算是否可以直接买入（只看买入计划金额和现金）
+    const totalBuyAmount = finalTradePlan.value
+      .filter(plan => plan.action === '买入')
+      .reduce((sum, plan) => sum + plan.amount, 0);
+    const currentAvailableCash = Number(assetInfo.value.cash);
+    canDirectlyBuy.value = totalBuyAmount <= currentAvailableCash;
+
+showFinalPlan.value = true;
+showFinalPlan.value = true;
 }
 
 watchEffect(() => {
@@ -917,7 +928,8 @@ function exportFinalPlan() {
         .map(plan => ({
           name: plan.name,
           ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : 0
-        }))
+        })),
+      can_directly_buy: canDirectlyBuy.value ? '是' : '否'
     };
 
     const jsonStr = JSON.stringify(exportData, null, 2);
@@ -987,7 +999,6 @@ function fallbackCopyTextToClipboard(text) {
 .strategy-container {
   padding: 16px;
 }
-
 .fund-info,
 .final-plan {
   background: #f8f9fa;
@@ -995,7 +1006,6 @@ function fallbackCopyTextToClipboard(text) {
   border-radius: 8px;
   margin-bottom: 16px;
 }
-
 .modal {
   position: fixed;
   top: 0; left: 0; right:0; bottom:0;
