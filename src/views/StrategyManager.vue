@@ -909,14 +909,23 @@ watchEffect(() => {
     editingTargetIdx.value = null
   }
 })
+function getLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function exportFinalPlan() {
   try {
     updateTargetHoldStatus();
 
     const totalAsset = assetInfo.value.total_asset || 0;
+    const planDate = getLocalDateString();
 
     const exportData = {
+      plan_date: planDate, // 新增当前日期字段
       sell_stocks_info: finalTradePlan.value
         .filter(plan => plan.action === '卖出')
         .map(plan => ({
