@@ -1,5 +1,5 @@
 {
-  "last_update": "2025-10-18T09:35:00.003933",
+  "last_update": "2025-10-19T09:35:00.014701",
   "positions": [
     {
       "stock_code": "511090.SH",
@@ -93,7 +93,7 @@
       "stock_code": "161116.SZ",
       "stock_name": "黄金主题",
       "volume": 10500,
-      "can_use_volume": 0,
+      "can_use_volume": 10500,
       "avg_price": 1.2441914285714286,
       "market_value": 17955.0
     },
@@ -109,7 +109,7 @@
       "stock_code": "164701.SZ",
       "stock_name": "黄金LOF",
       "volume": 9400,
-      "can_use_volume": 0,
+      "can_use_volume": 9400,
       "avg_price": 1.4304797872340427,
       "market_value": 16807.2
     },
