@@ -24,7 +24,18 @@
         <button @click="showEditStrategy = true" :disabled="!selectedStrategy" style="margin-left:6px;">编辑策略</button>
         <button @click="deleteStrategy" :disabled="!selectedStrategy" style="margin-left:6px;color:#c00;">删除策略</button>
         <button @click="openChangeDefaultAmount" :disabled="!selectedStrategy" style="margin-left:6px;">一键变更策略默认金额</button>
+
+        <!-- 导出/复制/粘贴/导入 -->
         <button @click="exportStrategies" style="margin-left:12px;">导出策略</button>
+
+        <!-- 新增：复制全部/粘贴全部 -->
+        <button @click="copyAllStrategies" style="margin-left:8px;">复制全部策略</button>
+        <button @click="pasteAllStrategies" style="margin-left:6px;">粘贴全部策略</button>
+
+        <!-- 保留单策略复制/粘贴（可选） -->
+        <button @click="copyStrategy" :disabled="!selectedStrategy" style="margin-left:8px;">复制策略</button>
+        <button @click="pasteStrategy" style="margin-left:6px;">粘贴策略</button>
+
         <input type="file" ref="importFile" style="display:none;" @change="importFromFile" accept=".json"/>
         <button @click="triggerImport" style="margin-left:8px;">导入策略</button>
       </div>
@@ -360,16 +371,24 @@ function positionCharacteristicText(value) {
 
 // 导入导出相关
 const importFile = ref(null)
+
 function exportStrategies() {
-  const data = localStorage.getItem(strategyCacheKey.value) || '{}'
-  const formattedData = JSON.stringify(JSON.parse(data), null, 2)
-  const blob = new Blob([formattedData], {type: 'application/json'})
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'strategies.json'
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    const dataObj = strategies.value || { list: [], map: {} }
+    const formattedData = JSON.stringify(dataObj, null, 2)
+    const blob = new Blob([formattedData], {type: 'application/json'})
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'strategies.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('导出策略失败:', err)
+    alert('导出策略失败，请稍后重试')
+  }
 }
 function triggerImport() {
   importFile.value && importFile.value.click()
@@ -382,15 +401,153 @@ function importFromFile(event) {
     try {
       let obj = JSON.parse(e.target.result)
       obj = migrateStrategies(obj)
-      localStorage.setItem(strategyCacheKey.value, JSON.stringify(obj))
-      strategies.value = obj
-      selectedStrategy.value = strategies.value.list[0] || ''
+      mergeImportedStrategies(obj)
+      saveToStorage()
       alert('导入成功！')
-    } catch {
+    } catch (err) {
+      console.error('importFromFile parse error', err)
       alert('JSON解析失败')
+    } finally {
+      event.target.value = ''
     }
   }
   reader.readAsText(file)
+}
+
+// 新功能：复制/粘贴策略（单条）
+async function copyStrategy() {
+  if (!selectedStrategy.value) {
+    alert('请选择要复制的策略')
+    return
+  }
+  const name = selectedStrategy.value
+  const data = strategies.value.map[name]
+  if (!data) {
+    alert('策略数据不存在')
+    return
+  }
+
+  const payload = {
+    name,
+    strategy: data
+  }
+
+  const text = JSON.stringify(payload, null, 2)
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      alert('策略已复制到剪贴板，可在另一个实例使用“粘贴策略”导入')
+    } catch (err) {
+      console.error('clipboard.writeText failed', err)
+      fallbackCopyTextToClipboard(text)
+    }
+  } else {
+    fallbackCopyTextToClipboard(text)
+  }
+}
+
+async function pasteStrategy() {
+  let text = ''
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      text = await navigator.clipboard.readText()
+    } catch (err) {
+      console.error('读取剪贴板失败', err)
+      text = prompt('读取剪贴板失败，请粘贴策略 JSON：')
+      if (!text) return
+    }
+  } else {
+    text = prompt('请粘贴策略 JSON：')
+    if (!text) return
+  }
+
+  try {
+    const parsed = JSON.parse(text)
+    const imported = migrateStrategies(parsed)
+    mergeImportedStrategies(imported)
+    saveToStorage()
+    alert('粘贴并导入成功')
+  } catch (err) {
+    console.error('pasteStrategy parse failed', err)
+    alert('粘贴内容不是有效的 JSON 或格式不支持')
+  }
+}
+
+// 新功能：复制/粘贴“全部策略”（整个缓存）
+async function copyAllStrategies() {
+  try {
+    const dataObj = strategies.value || { list: [], map: {} }
+    const text = JSON.stringify(dataObj, null, 2)
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      alert('全部策略已复制到剪贴板，去另一个实例使用“粘贴全部策略”即可导入')
+    } else {
+      fallbackCopyTextToClipboard(text)
+    }
+  } catch (err) {
+    console.error('copyAllStrategies failed', err)
+    alert('复制全部策略失败，请手动导出或重试')
+  }
+}
+
+async function pasteAllStrategies() {
+  let text = ''
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      text = await navigator.clipboard.readText()
+    } catch (err) {
+      console.error('读取剪贴板失败', err)
+      text = prompt('读取剪贴板失败，请粘贴策略 JSON（整个策略缓存）:')
+      if (!text) return
+    }
+  } else {
+    text = prompt('请粘贴策略 JSON（整个策略缓存）:')
+    if (!text) return
+  }
+
+  try {
+    const parsed = JSON.parse(text)
+    const imported = migrateStrategies(parsed)
+    // 当粘贴的是完整缓存（list+map），直接覆盖或合并？
+    // 我们采用合并：避免覆盖已有策略，保持唯一命名
+    mergeImportedStrategies(imported)
+    saveToStorage()
+    alert('全部策略粘贴并导入成功')
+  } catch (err) {
+    console.error('pasteAllStrategies parse failed', err)
+    alert('粘贴内容不是有效的 JSON 或格式不支持')
+  }
+}
+
+// 合并导入策略：避免覆盖同名，必要时自动添加后缀确保唯一
+function mergeImportedStrategies(imported) {
+  if (!imported || !imported.list || !imported.map) return
+
+  const addedNames = []
+
+  imported.list.forEach(name => {
+    const src = imported.map[name]
+    if (!src) return
+    const unique = uniqueStrategyName(name)
+    strategies.value.list.push(unique)
+    strategies.value.map[unique] = JSON.parse(JSON.stringify(src))
+    addedNames.push(unique)
+  })
+
+  if (addedNames.length > 0) {
+    selectedStrategy.value = addedNames[0]
+  }
+}
+
+// 生成唯一策略名（在 existing 策略名冲突时追加后缀）
+function uniqueStrategyName(base) {
+  let name = base
+  let i = 1
+  while (strategies.value.map[name]) {
+    name = `${base}（复制${i}）`
+    i++
+  }
+  return name
 }
 
 // 一键变更策略默认金额相关
@@ -415,7 +572,7 @@ function applyUnifiedAmount() {
   }
 }
 function saveChangeDefaultAmount() {
-  const targets = strategies.value.map[selectedStrategy.value]?.targets
+  const targets = strategies.value.map[selectedStrategy.value]?.targets || []
   changeAmountList.value.forEach(editItem => {
     const t = targets.find(x => x.name === editItem.name)
     if (t) t.default_amount = editItem.value
@@ -455,11 +612,18 @@ function getMarketValue(target) {
 // 数据迁移兼容：支持对象/数组/新结构
 function migrateStrategies(raw) {
   if (!raw) return { list: [], map: {} }
+  // 如果是单条拷贝 {name, strategy}
+  if (raw.name && raw.strategy) {
+    const name = raw.name
+    const map = {}
+    map[name] = raw.strategy
+    return { list: [name], map }
+  }
+
   if (raw.list && raw.map) return raw
   const map = {}
   let list = []
   if (Array.isArray(raw)) {
-    list = []
     raw.forEach((item, i) => {
       const name = item.name || `策略${i+1}`
       list.push(name)
@@ -485,11 +649,17 @@ function migrateStrategies(raw) {
 onMounted(() => {
   const saved = localStorage.getItem(strategyCacheKey.value)
   if (saved) {
-    let raw = JSON.parse(saved)
-    const migrated = migrateStrategies(raw)
-    strategies.value = migrated
-    if (JSON.stringify(migrated) !== saved) {
-      localStorage.setItem(strategyCacheKey.value, JSON.stringify(migrated))
+    try {
+      let raw = JSON.parse(saved)
+      const migrated = migrateStrategies(raw)
+      strategies.value = migrated
+      if (JSON.stringify(migrated) !== saved) {
+        localStorage.setItem(strategyCacheKey.value, JSON.stringify(migrated))
+      }
+    } catch (err) {
+      console.error('读取本地策略解析失败，使用默认策略', err)
+      strategies.value = JSON.parse(JSON.stringify(defaultStrategies))
+      localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value))
     }
   } else {
     strategies.value = JSON.parse(JSON.stringify(defaultStrategies))
@@ -501,7 +671,7 @@ onMounted(() => {
 
 watchEffect(() => {
   if (showEditStrategy.value && selectedStrategy.value) {
-    const strategy = strategies.value.map[selectedStrategy.value]
+    const strategy = strategies.value.map[selectedStrategy.value] || {}
     editStrategyForm.value = {
       name: selectedStrategy.value,
       type: strategy.type || '',
@@ -516,7 +686,11 @@ const currentTargets = computed(() => {
 })
 
 function saveToStorage() {
-  localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value))
+  try {
+    localStorage.setItem(strategyCacheKey.value, JSON.stringify(strategies.value))
+  } catch (err) {
+    console.error('保存到本地失败', err)
+  }
 }
 
 function addStrategy() {
@@ -556,7 +730,7 @@ function saveStrategyEdit() {
     editStrategyError.value = '策略名称已存在'
     return
   }
-  const strategyData = strategies.value.map[oldName]
+  const strategyData = strategies.value.map[oldName] || { targets: [] }
   if (newName !== oldName) {
     const idx = strategies.value.list.indexOf(oldName)
     if (idx >= 0) strategies.value.list[idx] = newName
@@ -565,7 +739,7 @@ function saveStrategyEdit() {
   strategies.value.map[newName] = {
     type: editStrategyForm.value.type.trim(),
     position_characteristic: editStrategyForm.value.position_characteristic,
-    targets: strategyData.targets
+    targets: strategyData.targets ? JSON.parse(JSON.stringify(strategyData.targets)) : []
   }
   selectedStrategy.value = newName
   saveToStorage()
@@ -734,7 +908,6 @@ function adjustPlanBasedOnFunds() {
 }
 
 function adjustBuyPlans(adjustType, amount) {
-  // 只拉伸“自动拉伸”类型（即position_characteristic==='stretch'）
   const adjustablePlans = finalTradePlan.value.filter(plan =>
     plan.action === '买入' &&
     strategies.value.map[plan.strategy]?.position_characteristic === adjustType
@@ -782,7 +955,6 @@ async function generateTradePlan() {
 
   tradePlans.value.forEach(plan => {
     if (plan.action === '切换') {
-      // 卖出fromTarget
       if (!mergedPlans[plan.fromTarget]) {
         mergedPlans[plan.fromTarget] = {
           name: plan.fromTarget,
@@ -793,7 +965,6 @@ async function generateTradePlan() {
       }
       mergedPlans[plan.fromTarget].sell += plan.amount
 
-      // 买入toTarget
       if (!mergedPlans[plan.toTarget]) {
         mergedPlans[plan.toTarget] = {
           name: plan.toTarget,
@@ -838,7 +1009,6 @@ async function generateTradePlan() {
           return null
         }
 
-        // 市值调整逻辑：市值 > 计划卖出金额1.01倍 且 < 1.1倍，才按市值*1.03
         if (
           marketValue > Math.abs(netAmount) * 1.01 &&
           marketValue < Math.abs(netAmount) * 1.1
@@ -863,7 +1033,6 @@ async function generateTradePlan() {
     })
     .filter(plan => plan && Math.abs(plan.amount) > 0)
 
-  // 计算总买入和卖出金额
   let totalBuy = 0
   let totalSell = 0
   finalTradePlan.value.forEach(plan => {
@@ -874,15 +1043,10 @@ async function generateTradePlan() {
     }
   })
 
-  // 当前可用资金（用cash字段）
-  const currentAvailable = Number(assetInfo.value.cash)
-  // 预计执行后可用资金
+  const currentAvailable = Number(assetInfo.value.cash || 0)
   const postExecutionAvailable = currentAvailable - totalBuy + totalSell
-
-  // 保存到 assetInfo 以便在界面展示
   assetInfo.value.postExecutionAvailable = postExecutionAvailable
 
-  // 拉伸/收缩逻辑
   if (postExecutionAvailable < 10000) {
     const deficit = 10000 - postExecutionAvailable
     adjustBuyPlans('shrink', deficit)
@@ -891,15 +1055,12 @@ async function generateTradePlan() {
     adjustBuyPlans('stretch', surplus)
   }
 
-    // 新增：计算是否可以直接买入（只看买入计划金额和现金）
-    const totalBuyAmount = finalTradePlan.value
-      .filter(plan => plan.action === '买入')
-      .reduce((sum, plan) => sum + plan.amount, 0);
-    const currentAvailableCash = Number(assetInfo.value.cash);
-    canDirectlyBuy.value = totalBuyAmount <= currentAvailableCash;
+  const totalBuyAmount = finalTradePlan.value
+    .filter(plan => plan.action === '买入')
+    .reduce((sum, plan) => sum + plan.amount, 0);
+  canDirectlyBuy.value = totalBuyAmount <= currentAvailable
 
-showFinalPlan.value = true;
-showFinalPlan.value = true;
+  showFinalPlan.value = true
 }
 
 watchEffect(() => {
@@ -909,6 +1070,7 @@ watchEffect(() => {
     editingTargetIdx.value = null
   }
 })
+
 function getLocalDateString() {
   const now = new Date();
   const year = now.getFullYear();
@@ -925,18 +1087,18 @@ function exportFinalPlan() {
     const planDate = getLocalDateString();
 
     const exportData = {
-      plan_date: planDate, // 新增当前日期字段
+      plan_date: planDate,
       sell_stocks_info: finalTradePlan.value
         .filter(plan => plan.action === '卖出')
         .map(plan => ({
           name: plan.name,
-          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : 0
+          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0'
         })),
       buy_stocks_info: finalTradePlan.value
         .filter(plan => plan.action === '买入')
         .map(plan => ({
           name: plan.name,
-          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : 0
+          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0'
         })),
       can_directly_buy: canDirectlyBuy.value ? '是' : '否'
     };
@@ -995,7 +1157,7 @@ function fallbackCopyTextToClipboard(text) {
   textArea.select();
   try {
     document.execCommand('copy');
-    alert('交易计划已复制到剪贴板，标的持有状态已更新！');
+    alert('文本已复制到剪贴板（回退方式）');
   } catch (err) {
     console.error('Fallback: 无法复制文本', err);
     alert('复制失败，请手动复制以下内容:\n' + text);

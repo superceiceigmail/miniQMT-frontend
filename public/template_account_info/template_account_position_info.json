@@ -1,5 +1,5 @@
 {
-  "last_update": "2025-10-25T09:35:01.031814",
+  "last_update": "2025-10-27T08:09:19.840498",
   "positions": [
     {
       "stock_code": "511090.SH",
@@ -112,6 +112,14 @@
       "can_use_volume": 9800,
       "avg_price": 3.0275102040816324,
       "market_value": 29958.6
+    },
+    {
+      "stock_code": "131810.SZ",
+      "stock_name": "未知股票",
+      "volume": 1780,
+      "can_use_volume": 0,
+      "avg_price": 100.0,
+      "market_value": 178000.0
     }
   ]
 }
