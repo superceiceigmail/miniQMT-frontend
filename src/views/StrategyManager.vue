@@ -349,6 +349,9 @@ const assetInfo = ref({})
 const planAdjustment = ref(null)
 const canDirectlyBuy = ref(true) // 新增：是否可以直接买入
 
+// 保存最后一次生成的 payload，便于导出时直接复制
+const lastGeneratedPayload = ref(null)
+
 // 排序相关
 function moveStrategy(direction) {
   const idx = strategies.value.list.indexOf(selectedStrategy.value)
@@ -608,6 +611,43 @@ function getMarketValue(target) {
     p => p.stock_name === target.name || (target.code && p.stock_code === target.code)
   );
   return Number(found?.market_value) || 0;
+}
+
+// 将 tradePlans 中的操作应用到策略缓存（更新 hold 字段）
+// 最小且安全：按时间顺序应用 buy->hold true, sell->hold false, 切换->from false/to true
+function applyHoldChangesFromPlans() {
+  if (!Array.isArray(tradePlans.value)) return;
+
+  const plans = [...tradePlans.value];
+  plans.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return ta - tb;
+  });
+
+  plans.forEach(plan => {
+    const sname = plan.strategy;
+    if (!sname || !strategies.value.map[sname]) return;
+    const strat = strategies.value.map[sname];
+    if (!Array.isArray(strat.targets)) return;
+
+    if (plan.action === '买入') {
+      const t = strat.targets.find(x => x.name === plan.target);
+      if (t) t.hold = true;
+    } else if (plan.action === '卖出') {
+      const t = strat.targets.find(x => x.name === plan.target);
+      if (t) t.hold = false;
+    } else if (plan.action === '切换') {
+      const from = strat.targets.find(x => x.name === plan.fromTarget);
+      const to = strat.targets.find(x => x.name === plan.toTarget);
+      if (from) from.hold = false;
+      if (to) to.hold = true;
+    }
+    // 若有其它 action，可在这里扩展
+  });
+
+  // 保存变化到本地缓存，保证 UI 与后续计算使用最新的 hold 状态
+  saveToStorage();
 }
 
 // 数据迁移兼容：支持对象/数组/新结构
@@ -941,6 +981,9 @@ function adjustBuyPlans(adjustType, amount) {
 }
 
 async function generateTradePlan() {
+  // 先把 tradePlans 中的操作应用到策略缓存（更新 hold 状态），这样 final_holdings 会基于更新后的“持有中”
+  applyHoldChangesFromPlans();
+
   try {
     const response = await fetch('/template_account_info/template_account_asset_info.json?_t=' + Date.now())
     if (response.ok) {
@@ -999,253 +1042,172 @@ async function generateTradePlan() {
     positionsMap[p.stock_name] = Number(p.market_value)
   })
 
-  finalTradePlan.value = Object.values(mergedPlans)
-    .map(plan => {
-      const netAmount = plan.buy - plan.sell
-
-      if (netAmount < 0) {
-        const marketValue = positionsMap[plan.name] || 0
-
-        if (marketValue <= 0) {
-          return null
-        }
-
-        if (
-          marketValue > Math.abs(netAmount) * 1.01 &&
-          marketValue < Math.abs(netAmount) * 1.1
-        ) {
-          return {
-            name: plan.name,
-            amount: -marketValue * 1.03,
-            action: '卖出',
-            strategy: plan.strategy,
-            adjusted: true
-          }
-        }
-      }
-
-      return {
-        name: plan.name,
-        amount: netAmount,
-        action: netAmount >= 0 ? '买入' : '卖出',
-        strategy: plan.strategy,
-        adjusted: false
-      }
-    })
-    .filter(plan => plan && Math.abs(plan.amount) > 0)
-
-  let totalBuy = 0
-  let totalSell = 0
-  finalTradePlan.value.forEach(plan => {
-    if (plan.action === '买入') {
-      totalBuy += plan.amount
-    } else {
-      totalSell += Math.abs(plan.amount)
-    }
-  })
-
-  const currentAvailable = Number(assetInfo.value.cash || 0)
-  const postExecutionAvailable = currentAvailable - totalBuy + totalSell
-  assetInfo.value.postExecutionAvailable = postExecutionAvailable
-
-  if (postExecutionAvailable < 10000) {
-    const deficit = 10000 - postExecutionAvailable
-    adjustBuyPlans('shrink', deficit)
-  } else if (postExecutionAvailable > 20000) {
-    const surplus = postExecutionAvailable - 20000
-    adjustBuyPlans('stretch', surplus)
-  }
-
-  const totalBuyAmount = finalTradePlan.value
-    .filter(plan => plan.action === '买入')
-    .reduce((sum, plan) => sum + plan.amount, 0);
-  canDirectlyBuy.value = totalBuyAmount <= currentAvailable
-
-  showFinalPlan.value = true
-}
-
-watchEffect(() => {
-  if (showAddTarget.value) {
-    targetForm.value = { name: '', default_amount: 0, hold: false }
-    targetFormError.value = ''
-    editingTargetIdx.value = null
-  }
-})
-
-function getLocalDateString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-// --- New helper: compute suggested final holdings (by strategy default_amount) after applying plans ---
-// This returns an array of { name, suggested_amount, suggested_pct } for targets that will be "持有" after applying the plans.
-// Behavior:
-//  - updateTargetHoldStatus() must be called before this to update strategies' target.hold flags according to the planned operations.
-//  - For each target that has hold === true across strategies, we sum its strategy default_amounts (if a target appears in multiple strategies).
-//  - Percentage is computed against assetInfo.total_asset when available, otherwise sum of suggested amounts.
-function computeSuggestedHoldings(totalAsset, strategiesMap) {
-  const suggestedMap = {}
-  // aggregate default_amounts for targets that are hold === true
-  Object.keys(strategiesMap || {}).forEach(strategyName => {
-    const s = strategiesMap[strategyName]
-    if (!s || !Array.isArray(s.targets)) return
-    s.targets.forEach(t => {
-      if (!t || !t.name) return
-      if (t.hold) {
-        const amt = Number(t.default_amount || 0)
-        suggestedMap[t.name] = (suggestedMap[t.name] || 0) + amt
-      }
-    })
-  })
-
-  // denom: prefer totalAsset, otherwise sum
-  let denom = Number(totalAsset || 0)
-  if (!denom || denom <= 0) {
-    denom = Object.values(suggestedMap).reduce((s, v) => s + Number(v || 0), 0)
-  }
-  if (!denom || denom <= 0) denom = 1
-
-  const arr = Object.keys(suggestedMap).map(name => {
-    const val = Number(suggestedMap[name] || 0)
-    const pct = (val / denom) * 100
+  // 构建 finalTradePlan（合并 buy/sell -> 买入为正，卖出为负）
+  finalTradePlan.value = Object.keys(mergedPlans).map(name => {
+    const item = mergedPlans[name]
+    const buy = Number(item.buy || 0)
+    const sell = Number(item.sell || 0)
+    const net = buy - sell
     return {
       name,
-      suggested_amount: Number(val.toFixed(2)),
-      suggested_pct: Number(pct.toFixed(2))
+      amount: Math.round(net),
+      action: net >= 0 ? '买入' : '卖出',
+      adjusted: false,
+      strategy: item.strategy
     }
-  }).filter(x => x.suggested_amount > 0).sort((a,b) => b.suggested_pct - a.suggested_pct)
+  }).filter(p => p.amount !== 0)
 
-  return arr
-}
-
-// Replace the existing exportFinalPlan with this enhanced version that exports strategy-suggested final holdings
-function exportFinalPlan() {
-  try {
-    // First, apply the hold-status updates based on planned operations so strategies' targets have correct hold flags
-    updateTargetHoldStatus();
-
-    const totalAsset = assetInfo.value.total_asset || 0;
-    const planDate = getLocalDateString();
-
-    // sell/buy info remain for compatibility
-    const sell_stocks_info = finalTradePlan.value
-      .filter(plan => plan.action === '卖出')
-      .map(plan => ({
-        name: plan.name,
-        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
-        amount: Number(plan.amount)
-      }))
-
-    const buy_stocks_info = finalTradePlan.value
-      .filter(plan => plan.action === '买入')
-      .map(plan => ({
-        name: plan.name,
-        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
-        amount: Number(plan.amount)
-      }))
-
-    // compute suggested final holdings based on strategies' default_amount after operations (hold flags updated)
-    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map)
-
-    const exportData = {
-      plan_date: planDate,
-      sell_stocks_info,
-      buy_stocks_info,
-      final_suggested_holdings, // <-- NEW: strategy-assigned suggested holding amounts after operations (for items with hold===true)
-      can_directly_buy: canDirectlyBuy.value ? '是' : '否'
-    };
-
-    const jsonStr = JSON.stringify(exportData, null, 2);
-
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(jsonStr).then(() => {
-        alert('交易计划及策略建议持有金额已复制到剪贴板，标的持有状态已更新！');
-      }).catch(err => {
-        console.error('复制失败:', err);
-        fallbackCopyTextToClipboard(jsonStr);
-      });
-    } else {
-      fallbackCopyTextToClipboard(jsonStr);
-    }
-  } catch (error) {
-    console.error('导出交易计划时出错:', error);
-    alert('导出失败，请重试');
-  }
-}
-
-function updateTargetHoldStatus() {
-  tradePlans.value.forEach(plan => {
-    if (strategies.value.map[plan.strategy]) {
-      if (plan.action === '买入') {
-        const target = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.target);
-        if (target) {
-          target.hold = true;
-        }
-      } else if (plan.action === '卖出') {
-        const target = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.target);
-        if (target) {
-          target.hold = false;
-        }
-      } else if (plan.action === '切换') {
-        const fromTarget = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.fromTarget);
-        const toTarget = strategies.value.map[plan.strategy].targets.find(t => t.name === plan.toTarget);
-        if (fromTarget) fromTarget.hold = false;
-        if (toTarget) toTarget.hold = true;
+  // 计算 final 持仓统计：基于策略缓存中每个策略 targets 的 hold 字段（不依赖当前持仓）
+  const finalHoldingsMap = {}
+  strategies.value.list.forEach(sname => {
+    const s = strategies.value.map[sname]
+    if (!s || !Array.isArray(s.targets)) return
+    s.targets.forEach(t => {
+      if (t.hold) {
+        const prev = finalHoldingsMap[t.name] || 0
+        // 采用 default_amount 作为参考市值（如果需要改为 market value，可从 positions 或外部来源获取）
+        finalHoldingsMap[t.name] = prev + (Number(t.default_amount) || 0)
       }
-    }
-  });
+    })
+  })
 
-  saveToStorage();
+  const accountTotal = Number(assetInfo.value.total_asset || assetInfo.value.totalAsset || assetInfo.value.total_asset_value || 0)
+  const final_holdings = Object.keys(finalHoldingsMap).map(name => {
+    const mv = finalHoldingsMap[name]
+    const pct = accountTotal > 0 ? Math.round((mv / accountTotal) * 10000) / 100 : 0
+    return {
+      name,
+      final_market_value: Math.round(mv * 10) / 10,
+      final_pct: pct
+    }
+  }).sort((a, b) => b.final_market_value - a.final_market_value)
+
+  // 计算是否能直接买入（示例逻辑：可用资金足够覆盖所有买入计划）
+  const totalBuy = finalTradePlan.value.reduce((s, p) => s + (p.action === '买入' ? p.amount : 0), 0)
+  const available = Number(assetInfo.value.cash || assetInfo.value.available || 0)
+  canDirectlyBuy.value = available >= totalBuy
+
+  // 资产执行后可用资金估算
+  assetInfo.value.postExecutionAvailable = available - totalBuy + finalTradePlan.value.reduce((s, p) => s + (p.action === '卖出' ? Math.abs(p.amount) : 0), 0)
+
+  // 根据资金调整计划
+  adjustPlanBasedOnFunds()
+
+  // 设置显示
+  showFinalPlan.value = true
+
+  // 最终导出 payload（保存到 lastGeneratedPayload）
+  const payload = {
+    plan_date: new Date().toISOString().slice(0, 10),
+    sell_stocks_info: finalTradePlan.value.filter(p => p.action === '卖出'),
+    buy_stocks_info: finalTradePlan.value.filter(p => p.action === '买入'),
+    final_holdings,
+    can_directly_buy: canDirectlyBuy.value ? '是' : '否'
+  }
+
+  lastGeneratedPayload.value = payload
+
+  console.log('生成的计划 payload:', JSON.stringify(payload, null, 2))
+  return payload
 }
 
 function fallbackCopyTextToClipboard(text) {
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.style.position = 'fixed';
-  textArea.style.left = '-999999px';
-  textArea.style.top = '-999999px';
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
   try {
-    document.execCommand('copy');
-    alert('文本已复制到剪贴板（回退方式）');
-  } catch (err) {
-    console.error('Fallback: 无法复制文本', err);
-    alert('复制失败，请手动复制以下内容:\n' + text);
+    const el = document.createElement('textarea')
+    el.value = text
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+    alert('已复制到剪贴板')
+  } catch (e) {
+    console.error('fallbackCopyTextToClipboard failed', e)
+    prompt('请手动复制以下内容：', text)
   }
-  document.body.removeChild(textArea);
+}
+
+// 修改为复制到剪贴板（优先 navigator.clipboard）
+async function exportFinalPlan() {
+  // 导出前把 tradePlans 应用到策略缓存（确保 final_holdings 基于最新 hold 状态）
+  applyHoldChangesFromPlans();
+
+  try {
+    // 如果已有最近生成的 payload，优先使用；否则重新生成
+    let payload = lastGeneratedPayload.value
+    if (!payload) {
+      payload = await generateTradePlan()
+    }
+
+    const text = JSON.stringify(payload, null, 2)
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text)
+        alert('交易计划已复制到剪贴板')
+        return
+      } catch (err) {
+        console.warn('navigator.clipboard.writeText 失败，使用 fallback：', err)
+      }
+    }
+
+    fallbackCopyTextToClipboard(text)
+  } catch (err) {
+    console.error('exportFinalPlan failed', err)
+    alert('导出失败，请稍后重试')
+  }
+}
+
+function exportFinalPlan_downloadFallback() {
+  // 备用：若你仍需要下载（未使用时不被调用）
+  try {
+    const payload = lastGeneratedPayload.value || { plan_date: new Date().toISOString().slice(0, 10), sell_stocks_info: [], buy_stocks_info: [], final_holdings: [], can_directly_buy: '否' }
+    const formattedData = JSON.stringify(payload, null, 2)
+    const blob = new Blob([formattedData], {type: 'application/json'})
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `trade_plan_${new Date().toISOString().slice(0,10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error('exportFinalPlan_downloadFallback failed', err)
+    alert('导出失败')
+  }
 }
 </script>
 
 <style scoped>
 .strategy-container {
   padding: 16px;
-}
-.fund-info,
-.final-plan {
-  background: #f8f9fa;
-  padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 16px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 .modal {
   position: fixed;
-  top: 0; left: 0; right:0; bottom:0;
+  left: 0;
+  top: 0;
+  right:0;
+  bottom:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
   background: rgba(0,0,0,0.3);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 .modal-content {
   background: #fff;
+  padding: 16px;
   border-radius: 6px;
-  padding: 24px 32px;
   min-width: 320px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.14);
+}
+.fund-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f9f9f9;
+}
+.final-plan {
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
 }
 </style>
