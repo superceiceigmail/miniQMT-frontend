@@ -276,6 +276,7 @@
     </div>
   </div>
 </template>
+
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
@@ -1079,27 +1080,81 @@ function getLocalDateString() {
   return `${year}-${month}-${day}`;
 }
 
+// --- New helper: compute suggested final holdings (by strategy default_amount) after applying plans ---
+// This returns an array of { name, suggested_amount, suggested_pct } for targets that will be "持有" after applying the plans.
+// Behavior:
+//  - updateTargetHoldStatus() must be called before this to update strategies' target.hold flags according to the planned operations.
+//  - For each target that has hold === true across strategies, we sum its strategy default_amounts (if a target appears in multiple strategies).
+//  - Percentage is computed against assetInfo.total_asset when available, otherwise sum of suggested amounts.
+function computeSuggestedHoldings(totalAsset, strategiesMap) {
+  const suggestedMap = {}
+  // aggregate default_amounts for targets that are hold === true
+  Object.keys(strategiesMap || {}).forEach(strategyName => {
+    const s = strategiesMap[strategyName]
+    if (!s || !Array.isArray(s.targets)) return
+    s.targets.forEach(t => {
+      if (!t || !t.name) return
+      if (t.hold) {
+        const amt = Number(t.default_amount || 0)
+        suggestedMap[t.name] = (suggestedMap[t.name] || 0) + amt
+      }
+    })
+  })
+
+  // denom: prefer totalAsset, otherwise sum
+  let denom = Number(totalAsset || 0)
+  if (!denom || denom <= 0) {
+    denom = Object.values(suggestedMap).reduce((s, v) => s + Number(v || 0), 0)
+  }
+  if (!denom || denom <= 0) denom = 1
+
+  const arr = Object.keys(suggestedMap).map(name => {
+    const val = Number(suggestedMap[name] || 0)
+    const pct = (val / denom) * 100
+    return {
+      name,
+      suggested_amount: Number(val.toFixed(2)),
+      suggested_pct: Number(pct.toFixed(2))
+    }
+  }).filter(x => x.suggested_amount > 0).sort((a,b) => b.suggested_pct - a.suggested_pct)
+
+  return arr
+}
+
+// Replace the existing exportFinalPlan with this enhanced version that exports strategy-suggested final holdings
 function exportFinalPlan() {
   try {
+    // First, apply the hold-status updates based on planned operations so strategies' targets have correct hold flags
     updateTargetHoldStatus();
 
     const totalAsset = assetInfo.value.total_asset || 0;
     const planDate = getLocalDateString();
 
+    // sell/buy info remain for compatibility
+    const sell_stocks_info = finalTradePlan.value
+      .filter(plan => plan.action === '卖出')
+      .map(plan => ({
+        name: plan.name,
+        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
+        amount: Number(plan.amount)
+      }))
+
+    const buy_stocks_info = finalTradePlan.value
+      .filter(plan => plan.action === '买入')
+      .map(plan => ({
+        name: plan.name,
+        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
+        amount: Number(plan.amount)
+      }))
+
+    // compute suggested final holdings based on strategies' default_amount after operations (hold flags updated)
+    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map)
+
     const exportData = {
       plan_date: planDate,
-      sell_stocks_info: finalTradePlan.value
-        .filter(plan => plan.action === '卖出')
-        .map(plan => ({
-          name: plan.name,
-          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0'
-        })),
-      buy_stocks_info: finalTradePlan.value
-        .filter(plan => plan.action === '买入')
-        .map(plan => ({
-          name: plan.name,
-          ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0'
-        })),
+      sell_stocks_info,
+      buy_stocks_info,
+      final_suggested_holdings, // <-- NEW: strategy-assigned suggested holding amounts after operations (for items with hold===true)
       can_directly_buy: canDirectlyBuy.value ? '是' : '否'
     };
 
@@ -1107,7 +1162,7 @@ function exportFinalPlan() {
 
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(jsonStr).then(() => {
-        alert('交易计划已复制到剪贴板，标的持有状态已更新！');
+        alert('交易计划及策略建议持有金额已复制到剪贴板，标的持有状态已更新！');
       }).catch(err => {
         console.error('复制失败:', err);
         fallbackCopyTextToClipboard(jsonStr);
