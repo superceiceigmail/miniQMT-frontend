@@ -254,7 +254,10 @@
     <!-- 最终交易计划 -->
     <div v-if="showFinalPlan" class="final-plan">
       <h3>最终交易计划</h3>
-      <button @click="exportFinalPlan" style="margin-bottom:12px;">导出交易计划</button>
+      <div style="margin-bottom:12px;">
+        <button @click="exportTradePlan" style="margin-right:8px;">导出交易计划（并更新持有状态）</button>
+        <button @click="exportSuggestedHoldings">导出建议持仓</button>
+      </div>
       <table border="1" cellpadding="8">
         <thead>
           <tr>
@@ -268,7 +271,7 @@
           <tr v-for="(plan, idx) in finalTradePlan" :key="idx">
             <td>{{ plan.name }}</td>
             <td>{{ plan.action }}</td>
-            <td>{{ Math.abs(plan.amount).toFixed(2) }}</td>
+            <td>{{ plan.amount.toFixed(2) }}</td>
             <td>{{ plan.adjusted ? '已根据市值调整' : '' }}</td>
           </tr>
         </tbody>
@@ -892,7 +895,7 @@ function adjustPlanBasedOnFunds() {
     if (plan.action === '买入') {
       totalBuy += plan.amount
     } else {
-      totalSell += Math.abs(plan.amount)
+      totalSell += plan.amount
     }
   })
 
@@ -1004,6 +1007,7 @@ async function generateTradePlan() {
       const netAmount = plan.buy - plan.sell
 
       if (netAmount < 0) {
+        const sellAmount = Math.abs(netAmount)
         const marketValue = positionsMap[plan.name] || 0
 
         if (marketValue <= 0) {
@@ -1011,22 +1015,30 @@ async function generateTradePlan() {
         }
 
         if (
-          marketValue > Math.abs(netAmount) * 1.01 &&
-          marketValue < Math.abs(netAmount) * 1.1
+          marketValue > sellAmount * 1.01 &&
+          marketValue < sellAmount * 1.1
         ) {
           return {
             name: plan.name,
-            amount: -marketValue * 1.03,
+            amount: Number((marketValue * 1.03).toFixed(2)),
             action: '卖出',
             strategy: plan.strategy,
             adjusted: true
           }
         }
+
+        return {
+          name: plan.name,
+          amount: Number(sellAmount.toFixed(2)),
+          action: '卖出',
+          strategy: plan.strategy,
+          adjusted: false
+        }
       }
 
       return {
         name: plan.name,
-        amount: netAmount,
+        amount: Number(netAmount.toFixed(2)),
         action: netAmount >= 0 ? '买入' : '卖出',
         strategy: plan.strategy,
         adjusted: false
@@ -1040,7 +1052,7 @@ async function generateTradePlan() {
     if (plan.action === '买入') {
       totalBuy += plan.amount
     } else {
-      totalSell += Math.abs(plan.amount)
+      totalSell += plan.amount
     }
   })
 
@@ -1121,10 +1133,12 @@ function computeSuggestedHoldings(totalAsset, strategiesMap) {
   return arr
 }
 
-// Replace the existing exportFinalPlan with this enhanced version that exports strategy-suggested final holdings
-function exportFinalPlan() {
+// --- Split export: exportTradePlan (update hold + export plan without suggested holdings)
+// and exportSuggestedHoldings (export final_suggested_holdings only, without mutating strategies) ---
+
+function exportTradePlan() {
   try {
-    // First, apply the hold-status updates based on planned operations so strategies' targets have correct hold flags
+    // Apply hold-status updates based on planned operations (this mutates strategies and saves)
     updateTargetHoldStatus();
 
     const totalAsset = assetInfo.value.total_asset || 0;
@@ -1135,7 +1149,7 @@ function exportFinalPlan() {
       .filter(plan => plan.action === '卖出')
       .map(plan => ({
         name: plan.name,
-        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
+        ratio: totalAsset > 0 ? ((plan.amount / totalAsset) * 100).toFixed(2) : '0',
         amount: Number(plan.amount)
       }))
 
@@ -1143,18 +1157,14 @@ function exportFinalPlan() {
       .filter(plan => plan.action === '买入')
       .map(plan => ({
         name: plan.name,
-        ratio: totalAsset > 0 ? ((Math.abs(plan.amount) / totalAsset) * 100).toFixed(2) : '0',
+        ratio: totalAsset > 0 ? ((plan.amount / totalAsset) * 100).toFixed(2) : '0',
         amount: Number(plan.amount)
       }))
-
-    // compute suggested final holdings based on strategies' default_amount after operations (hold flags updated)
-    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map)
 
     const exportData = {
       plan_date: planDate,
       sell_stocks_info,
       buy_stocks_info,
-      final_suggested_holdings, // <-- NEW: strategy-assigned suggested holding amounts after operations (for items with hold===true)
       can_directly_buy: canDirectlyBuy.value ? '是' : '否'
     };
 
@@ -1162,7 +1172,7 @@ function exportFinalPlan() {
 
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(jsonStr).then(() => {
-        alert('交易计划及策略建议持有金额已复制到剪贴板，标的持有状态已更新！');
+        alert('交易计划已复制到剪贴板，标的持有状态已更新！');
       }).catch(err => {
         console.error('复制失败:', err);
         fallbackCopyTextToClipboard(jsonStr);
@@ -1172,6 +1182,37 @@ function exportFinalPlan() {
     }
   } catch (error) {
     console.error('导出交易计划时出错:', error);
+    alert('导出失败，请重试');
+  }
+}
+
+function exportSuggestedHoldings() {
+  try {
+    const totalAsset = assetInfo.value.total_asset || 0;
+    const planDate = getLocalDateString();
+
+    // Do NOT call updateTargetHoldStatus here — this function only exports suggestions based on current strategies' hold flags.
+    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map)
+
+    const exportData = {
+      plan_date: planDate,
+      final_suggested_holdings
+    };
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(jsonStr).then(() => {
+        alert('建议持仓已复制到剪贴板！');
+      }).catch(err => {
+        console.error('复制失败:', err);
+        fallbackCopyTextToClipboard(jsonStr);
+      });
+    } else {
+      fallbackCopyTextToClipboard(jsonStr);
+    }
+  } catch (error) {
+    console.error('导出建议持仓时出错:', error);
     alert('导出失败，请重试');
   }
 }
