@@ -1,0 +1,20 @@
+{
+  "records": [
+    {
+      "date": "2025-01-08",
+      "honors": [
+        {
+          "id": 1,
+          "content": "完成登录功能开发",
+          "category": "开发",
+          "tags": ["前端", "登录"],
+          "importance": "重要",
+          "points": 2.0,
+          "unit": "小时",
+          "project": "miniQMT项目",
+          "completed_at": "2025-01-08T15:30:00Z"
+        }
+      ]
+    }
+  ]
+}
