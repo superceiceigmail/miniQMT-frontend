@@ -1,5 +1,5 @@
 {
-  "last_update": "2025-11-29T09:35:00.025088",
+  "last_update": "2025-11-30T09:35:01.019754",
   "positions": [
     {
       "stock_code": "510050.SH",
@@ -10,36 +10,12 @@
       "market_value": 9333.0
     },
     {
-      "stock_code": "511090.SH",
-      "stock_name": "30年国债",
-      "volume": 0,
-      "can_use_volume": 0,
-      "avg_price": null,
-      "market_value": 0.0
-    },
-    {
-      "stock_code": "511130.SH",
-      "stock_name": "国债30年",
-      "volume": 0,
-      "can_use_volume": 0,
-      "avg_price": null,
-      "market_value": 0.0
-    },
-    {
       "stock_code": "511380.SH",
       "stock_name": "可转债",
       "volume": 2500,
       "can_use_volume": 2500,
       "avg_price": 13.393,
       "market_value": 33182.5
-    },
-    {
-      "stock_code": "511880.SH",
-      "stock_name": "国债指数",
-      "volume": 0,
-      "can_use_volume": 0,
-      "avg_price": null,
-      "market_value": 0.0
     },
     {
       "stock_code": "512980.SH",
@@ -152,14 +128,6 @@
       "can_use_volume": 18000,
       "avg_price": 1.6469888888888888,
       "market_value": 30654.0
-    },
-    {
-      "stock_code": "RXL001.SZ",
-      "stock_name": "日鑫利",
-      "volume": 0,
-      "can_use_volume": 0,
-      "avg_price": null,
-      "market_value": 0.0
     },
     {
       "stock_code": "204001.SH",
