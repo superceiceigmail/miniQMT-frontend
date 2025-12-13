@@ -1,5 +1,5 @@
 {
-  "last_update": "2025-12-12T09:35:00.013719",
+  "last_update": "2025-12-12T14:57:01.024482",
   "positions": [
     {
       "stock_code": "511090.SH",
@@ -28,10 +28,10 @@
     {
       "stock_code": "512400.SH",
       "stock_name": "未知股票",
-      "volume": 1800,
-      "can_use_volume": 1800,
-      "avg_price": 1.7552777777777777,
-      "market_value": 3151.8
+      "volume": 0,
+      "can_use_volume": 0,
+      "avg_price": 0.0,
+      "market_value": 0.0
     },
     {
       "stock_code": "513100.SH",
@@ -132,18 +132,18 @@
     {
       "stock_code": "161125.SZ",
       "stock_name": "标普500",
-      "volume": 2100,
-      "can_use_volume": 2100,
-      "avg_price": 3.014904761904762,
-      "market_value": 6272.7
+      "volume": 500,
+      "can_use_volume": 500,
+      "avg_price": 3.049800000000001,
+      "market_value": 1493.5
     },
     {
       "stock_code": "162415.SZ",
       "stock_name": "美国消费",
-      "volume": 20,
-      "can_use_volume": 20,
-      "avg_price": 14.203,
-      "market_value": 61.1
+      "volume": 7344,
+      "can_use_volume": 7344,
+      "avg_price": 3.1062813180827886,
+      "market_value": 22435.920000000002
     },
     {
       "stock_code": "164701.SZ",
@@ -152,6 +152,22 @@
       "can_use_volume": 7800,
       "avg_price": 1.6479358974358973,
       "market_value": 13416.0
+    },
+    {
+      "stock_code": "161126.SZ",
+      "stock_name": "标普医疗",
+      "volume": 5700,
+      "can_use_volume": 5700,
+      "avg_price": 1.9420964912280703,
+      "market_value": 10983.9
+    },
+    {
+      "stock_code": "511880.SH",
+      "stock_name": "国债指数",
+      "volume": 4700,
+      "can_use_volume": 0,
+      "avg_price": 101.16,
+      "market_value": 475419.10000000003
     }
   ]
 }
