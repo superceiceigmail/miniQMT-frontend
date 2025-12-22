@@ -1,5 +1,5 @@
 {
-  "last_update": "2025-12-20T09:35:00.033499",
+  "last_update": "2025-12-22T09:35:01.049480",
   "positions": [
     {
       "stock_code": "511260.SH",
@@ -7,7 +7,7 @@
       "volume": 300,
       "can_use_volume": 300,
       "avg_price": 134.959,
-      "market_value": 40507.5
+      "market_value": 40505.4
     },
     {
       "stock_code": "511380.SH",
@@ -15,7 +15,7 @@
       "volume": 4800,
       "can_use_volume": 4800,
       "avg_price": 13.294708333333332,
-      "market_value": 64776.00000000001
+      "market_value": 64862.4
     },
     {
       "stock_code": "512670.SH",
@@ -23,7 +23,7 @@
       "volume": 2300,
       "can_use_volume": 2300,
       "avg_price": 0.8152173913043478,
-      "market_value": 1922.8
+      "market_value": 1920.5
     },
     {
       "stock_code": "513520.SH",
@@ -31,7 +31,7 @@
       "volume": 1700,
       "can_use_volume": 1700,
       "avg_price": 1.8252941176470587,
-      "market_value": 3095.7
+      "market_value": 3153.5
     },
     {
       "stock_code": "518880.SH",
@@ -39,7 +39,7 @@
       "volume": 5900,
       "can_use_volume": 5900,
       "avg_price": 9.30803220338983,
-      "market_value": 54946.700000000004
+      "market_value": 55389.2
     },
     {
       "stock_code": "588000.SH",
@@ -47,7 +47,7 @@
       "volume": 8400,
       "can_use_volume": 8400,
       "avg_price": 1.4100702380952381,
-      "market_value": 11592.000000000002
+      "market_value": 11692.800000000001
     },
     {
       "stock_code": "159869.SZ",
@@ -55,7 +55,7 @@
       "volume": 1800,
       "can_use_volume": 1800,
       "avg_price": 1.4242777777777778,
-      "market_value": 2590.2000000000003
+      "market_value": 2588.4
     },
     {
       "stock_code": "159949.SZ",
@@ -63,7 +63,7 @@
       "volume": 2400,
       "can_use_volume": 2400,
       "avg_price": 2.3106500000000003,
-      "market_value": 3564.0000000000005
+      "market_value": 3612.0000000000005
     },
     {
       "stock_code": "159967.SZ",
@@ -71,7 +71,7 @@
       "volume": 21500,
       "can_use_volume": 21500,
       "avg_price": 0.6123488372093023,
-      "market_value": 13351.5
+      "market_value": 13588.0
     },
     {
       "stock_code": "160719.SZ",
@@ -79,7 +79,7 @@
       "volume": 6900,
       "can_use_volume": 6900,
       "avg_price": 1.9883768115942029,
-      "market_value": 13951.800000000001
+      "market_value": 14041.500000000002
     },
     {
       "stock_code": "161116.SZ",
@@ -87,7 +87,7 @@
       "volume": 11700,
       "can_use_volume": 11700,
       "avg_price": 1.6214871794871797,
-      "market_value": 19585.8
+      "market_value": 19726.2
     },
     {
       "stock_code": "161126.SZ",
@@ -95,23 +95,55 @@
       "volume": 5700,
       "can_use_volume": 5700,
       "avg_price": 1.9420964912280703,
-      "market_value": 10921.2
+      "market_value": 11001.0
     },
     {
       "stock_code": "162415.SZ",
       "stock_name": "美国消费",
-      "volume": 2244,
-      "can_use_volume": 44,
-      "avg_price": 3.10301247771836,
-      "market_value": 6985.572
+      "volume": 9344,
+      "can_use_volume": 9344,
+      "avg_price": 3.116039169520548,
+      "market_value": 29115.904000000002
     },
     {
       "stock_code": "164701.SZ",
       "stock_name": "黄金LOF",
-      "volume": 7800,
-      "can_use_volume": 7800,
-      "avg_price": 1.6479358974358973,
-      "market_value": 13774.8
+      "volume": 0,
+      "can_use_volume": 0,
+      "avg_price": null,
+      "market_value": 0.0
+    },
+    {
+      "stock_code": "511090.SH",
+      "stock_name": "30年国债",
+      "volume": 1300,
+      "can_use_volume": 1300,
+      "avg_price": 115.179,
+      "market_value": 149579.30000000002
+    },
+    {
+      "stock_code": "164824.SZ",
+      "stock_name": "印度基金",
+      "volume": 15100,
+      "can_use_volume": 15100,
+      "avg_price": 1.470073509933775,
+      "market_value": 22166.8
+    },
+    {
+      "stock_code": "511130.SH",
+      "stock_name": "国债30年",
+      "volume": 900,
+      "can_use_volume": 900,
+      "avg_price": 105.2,
+      "market_value": 94631.4
+    },
+    {
+      "stock_code": "511880.SH",
+      "stock_name": "国债指数",
+      "volume": 3200,
+      "can_use_volume": 3200,
+      "avg_price": 101.17299999999999,
+      "market_value": 323750.39999999997
     }
   ]
 }
