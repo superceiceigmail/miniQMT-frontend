@@ -142,7 +142,8 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(target, idx) in currentTargets" :key="target.name">
+        <!-- NOTE: key changed from target.name to idx so same-name targets are allowed without duplicate key warnings -->
+        <tr v-for="(target, idx) in currentTargets" :key="idx">
           <td>{{ target.name }}</td>
           <td>{{ Number(getMarketValue(target)).toFixed(2) }}</td>
           <td>{{ target.default_amount }}</td>
@@ -169,12 +170,14 @@
         <h4>切换标的</h4>
         <div style="margin-bottom:12px;">
           <label>选择目标标的：</label>
+          <!-- iterate with index so duplicates are selectable distinctly -->
           <select v-model="switchTargetName" style="margin-left:6px;">
             <option value="">请选择标的</option>
             <option
-              v-for="target in currentTargets.filter((_, i) => i !== currentSwitchIdx)"
-              :key="target.name"
-              :value="target.name"
+              v-for="(target, i) in currentTargets"
+              :key="i"
+              v-if="i !== currentSwitchIdx"
+              :value="i"
             >
               {{ target.name }}
             </option>
@@ -296,6 +299,7 @@ const strategyCacheKey = computed(() => {
 // =====================================
 
 // 默认策略数据（升级为新结构支持顺序）
+// NOTE: no change needed here for duplicate target names; duplicate names are allowed now.
 const defaultStrategies = {
   list: ['科技成长策略', '国债策略'],
   map: {
@@ -345,6 +349,8 @@ const positions = ref([])  // 持仓数组
 const tradePlans = ref([]) // 变更计划数组
 const showSwitchModal = ref(false)
 const currentSwitchIdx = ref(null)
+// switchTargetName now stores the target index (number as string from select) instead of name,
+// so duplicates are selectable distinctly.
 const switchTargetName = ref('')
 const finalTradePlan = ref([])
 const showFinalPlan = ref(false)
@@ -784,10 +790,8 @@ function saveTarget() {
     targets[editingTargetIdx.value] = { ...form }
     editingTargetIdx.value = null
   } else {
-    if (targets.some(t => t.name === form.name)) {
-      targetFormError.value = '标的名称已存在'
-      return
-    }
+    // ALLOWED: do NOT block duplicate target names anymore.
+    // Previously there was a check preventing same-name targets; removed per requirement.
     targets.push({ ...form })
     showAddTarget.value = false
   }
@@ -831,7 +835,13 @@ function switchTarget(idx) {
 function confirmSwitch() {
   const idx = currentSwitchIdx.value
   const current = currentTargets.value[idx]
-  const target = currentTargets.value.find(t => t.name === switchTargetName.value)
+  // switchTargetName contains the index (as string) of the to-target in currentTargets
+  const toIdx = Number(switchTargetName.value)
+  if (isNaN(toIdx) || toIdx < 0 || toIdx >= currentTargets.value.length) {
+    alert('请选择要切换的标的')
+    return
+  }
+  const target = currentTargets.value[toIdx]
 
   if (!target) {
     alert('请选择要切换的标的')
