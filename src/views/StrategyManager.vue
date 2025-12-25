@@ -248,6 +248,10 @@
       <div>
         是否可以直接买入: <span :style="{color: canDirectlyBuy ? 'green':'red'}">{{ canDirectlyBuy ? '是' : '否' }}</span>
       </div>
+      <!-- 新增：显示涉及到变动的策略总数量 -->
+      <div>
+        涉及策略数量（用于比对，避免漏失）: <strong>{{ tradePlanStrategyCount }}</strong>
+      </div>
       <div v-if="planAdjustment" class="adjustment-info">
         <h4>计划调整</h4>
         <div>{{ planAdjustment.message }}</div>
@@ -357,6 +361,9 @@ const showFinalPlan = ref(false)
 const assetInfo = ref({})
 const planAdjustment = ref(null)
 const canDirectlyBuy = ref(true) // 新增：是否可以直接买入
+
+// 新增：记录交易计划中涉及到的策略总数（去重）
+const tradePlanStrategyCount = ref(0)
 
 // 排序相关
 function moveStrategy(direction) {
@@ -1082,6 +1089,17 @@ async function generateTradePlan() {
     .filter(plan => plan.action === '买入')
     .reduce((sum, plan) => sum + plan.amount, 0);
   canDirectlyBuy.value = totalBuyAmount <= currentAvailable
+
+  // 新增：统计 tradePlans 中涉及到的策略总数（去重）
+  try {
+    const strategySet = new Set()
+    tradePlans.value.forEach(p => {
+      if (p && p.strategy) strategySet.add(p.strategy)
+    })
+    tradePlanStrategyCount.value = strategySet.size
+  } catch (e) {
+    tradePlanStrategyCount.value = 0
+  }
 
   showFinalPlan.value = true
 }
