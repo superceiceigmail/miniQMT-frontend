@@ -290,6 +290,11 @@
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
+// ======= 固定基准资产（写死为 700000） =======
+// 为避免账户波动或入金影响导出比例，统一使用固定分母 700000。
+const BASE_ASSET = 700000
+// =============================================
+
 // ======= 策略缓存key变量化逻辑 =======
 const strategyType = ref(localStorage.getItem('strategyType') || 'conservative')
 const strategyCacheKey = computed(() => {
@@ -365,6 +370,7 @@ const canDirectlyBuy = ref(true) // 新增：是否可以直接买入
 // 新增：记录交易计划中涉及到的策略总数（去重）
 const tradePlanStrategyCount = ref(0)
 
+
 // 排序相关
 function moveStrategy(direction) {
   const idx = strategies.value.list.indexOf(selectedStrategy.value)
@@ -391,20 +397,39 @@ const importFile = ref(null)
 
 function exportStrategies() {
   try {
-    const dataObj = strategies.value || { list: [], map: {} }
-    const formattedData = JSON.stringify(dataObj, null, 2)
-    const blob = new Blob([formattedData], {type: 'application/json'})
+    // 打包当前策略 + 运行态数据到一个完整的 export 包
+    const exportData = {
+      type: 'strategy_cache_export',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      cache_key: strategyCacheKey.value,
+      full_cache: true, // 表示这是完整缓存导出（包含 list+map）
+      strategies: strategies.value || { list: [], map: {} },
+      tradePlans: tradePlans.value || [],
+      positions: positions.value || [],
+      assetInfo: assetInfo.value || {}
+    };
+
+    const json = JSON.stringify(exportData, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'strategies.json'
+    a.download = `strategies_export_${getLocalDateString()}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+
+    // 同时也尝试把导出内容复制到剪贴板（方便跨设备粘贴）
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(json).catch(() => {})
+    }
+
+    alert('导出完成：已保存为 JSON 文件，并尝试复制到剪贴板。')
   } catch (err) {
     console.error('导出策略失败:', err)
-    alert('导出策略失败，请稍后重试')
+    alert('导出策略失败，请重试')
   }
 }
 function triggerImport() {
@@ -416,14 +441,64 @@ function importFromFile(event) {
   const reader = new FileReader()
   reader.onload = function(e) {
     try {
-      let obj = JSON.parse(e.target.result)
-      obj = migrateStrategies(obj)
-      mergeImportedStrategies(obj)
-      saveToStorage()
-      alert('导入成功！')
+      const parsed = JSON.parse(e.target.result)
+
+      // 如果是我们定义的完整导出包
+      if (parsed && parsed.type === 'strategy_cache_export') {
+        // 如果这是完整缓存导出（full_cache），提示用户是否覆盖本地缓存
+        if (parsed.full_cache) {
+          const confirmOverwrite = confirm(
+            `检测到这是完整缓存导出（来自 key: ${parsed.cache_key || 'unknown'}）。\n` +
+            `覆盖本地缓存会替换当前策略数据（包括持仓状态）。是否要覆盖本地缓存？\n\n` +
+            `按“确定”会用文件中的 strategies 完全替换本地缓存；按“取消”则只会合并策略（保留本地不同策略）。`
+          )
+
+          if (confirmOverwrite) {
+            // 覆盖 localStorage 下当前的 strategyCacheKey
+            try {
+              // 如果导出包中的 strategies 不是 list+map 结构，先迁移
+              const toStore = migrateStrategies(parsed.strategies || parsed)
+              localStorage.setItem(strategyCacheKey.value, JSON.stringify(toStore))
+              strategies.value = toStore
+            } catch (e) {
+              console.error('覆盖本地缓存时出错', e)
+              alert('覆盖本地缓存失败，已中止。')
+              return
+            }
+          } else {
+            // 合并导入（保留本地已有策略，避免同名覆盖）
+            const toMerge = migrateStrategies(parsed.strategies || parsed)
+            mergeImportedStrategies(toMerge)
+          }
+        } else {
+          // 非 full_cache，仅合并策略
+          const toMerge = migrateStrategies(parsed.strategies || parsed)
+          mergeImportedStrategies(toMerge)
+        }
+
+        // 同步导入运行时数据（不写入 localStorage，除非你想）
+        if (Array.isArray(parsed.tradePlans)) {
+          tradePlans.value = parsed.tradePlans
+        }
+        if (Array.isArray(parsed.positions)) {
+          positions.value = parsed.positions
+        }
+        if (parsed.assetInfo && typeof parsed.assetInfo === 'object') {
+          assetInfo.value = parsed.assetInfo
+        }
+
+        saveToStorage()
+        alert('导入成功（策略/缓存 包）。')
+      } else {
+        // 兼容老的导出，仅是策略 list/map 或数组形式
+        const imported = migrateStrategies(parsed)
+        mergeImportedStrategies(imported)
+        saveToStorage()
+        alert('导入策略成功（合并模式）。')
+      }
     } catch (err) {
       console.error('importFromFile parse error', err)
-      alert('JSON解析失败')
+      alert('JSON解析失败或格式不支持')
     } finally {
       event.target.value = ''
     }
@@ -1125,7 +1200,7 @@ function getLocalDateString() {
 // Behavior:
 //  - updateTargetHoldStatus() must be called before this to update strategies' target.hold flags according to the planned operations.
 //  - For each target that has hold === true across strategies, we sum its strategy default_amounts (if a target appears in multiple strategies).
-//  - Percentage is computed against assetInfo.total_asset when available, otherwise sum of suggested amounts.
+//  - Percentage is computed against BASE_ASSET (700000) to keep ratios stable and not affected by account value changes.
 function computeSuggestedHoldings(totalAsset, strategiesMap) {
   const suggestedMap = {}
   // aggregate default_amounts for targets that are hold === true
@@ -1141,11 +1216,8 @@ function computeSuggestedHoldings(totalAsset, strategiesMap) {
     })
   })
 
-  // denom: prefer totalAsset, otherwise sum
-  let denom = Number(totalAsset || 0)
-  if (!denom || denom <= 0) {
-    denom = Object.values(suggestedMap).reduce((s, v) => s + Number(v || 0), 0)
-  }
+  // Use fixed denom BASE_ASSET to avoid account fluctuations
+  let denom = Number(BASE_ASSET || 0)
   if (!denom || denom <= 0) denom = 1
 
   const arr = Object.keys(suggestedMap).map(name => {
@@ -1169,7 +1241,7 @@ function exportTradePlan() {
     // Apply hold-status updates based on planned operations (this mutates strategies and saves)
     updateTargetHoldStatus();
 
-    const totalAsset = assetInfo.value.total_asset || 0;
+    const totalAsset = BASE_ASSET;
     const planDate = getLocalDateString();
 
     // sell/buy info remain for compatibility
@@ -1177,7 +1249,7 @@ function exportTradePlan() {
       .filter(plan => plan.action === '卖出')
       .map(plan => ({
         name: plan.name,
-        ratio: totalAsset > 0 ? ((plan.amount / totalAsset) * 100).toFixed(2) : '0',
+        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)),
         amount: Number(plan.amount)
       }))
 
@@ -1185,7 +1257,7 @@ function exportTradePlan() {
       .filter(plan => plan.action === '买入')
       .map(plan => ({
         name: plan.name,
-        ratio: totalAsset > 0 ? ((plan.amount / totalAsset) * 100).toFixed(2) : '0',
+        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)),
         amount: Number(plan.amount)
       }))
 
@@ -1216,7 +1288,7 @@ function exportTradePlan() {
 
 function exportSuggestedHoldings() {
   try {
-    const totalAsset = assetInfo.value.total_asset || 0;
+    const totalAsset = BASE_ASSET;
     const planDate = getLocalDateString();
 
     // Do NOT call updateTargetHoldStatus here — this function only exports suggestions based on current strategies' hold flags.
