@@ -290,9 +290,9 @@
 <script setup>
 import { ref, computed, onMounted, watchEffect } from 'vue'
 
-// ======= 固定基准资产（写死为 700000） =======
-// 为避免账户波动或入金影响导出比例，统一使用固定分母 700000。
-const BASE_ASSET = 700000
+// ======= 固定基准资产（写死为 1000000） =======
+// 为避免账户波动或入金影响导出比例，统一使用固定分母 1000000。
+const BASE_ASSET = 1000000
 // =============================================
 
 // ======= 策略缓存key变量化逻辑 =======
@@ -1292,11 +1292,15 @@ function exportSuggestedHoldings() {
     const planDate = getLocalDateString();
 
     // Do NOT call updateTargetHoldStatus here — this function only exports suggestions based on current strategies' hold flags.
-    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map)
+    const final_suggested_holdings = computeSuggestedHoldings(totalAsset, strategies.value.map);
+
+    // 新增统计字段：总建议金额
+    const total_suggested_amount = final_suggested_holdings.reduce((sum, item) => sum + item.suggested_amount, 0);
 
     const exportData = {
       plan_date: planDate,
-      final_suggested_holdings
+      final_suggested_holdings,
+      total_suggested_amount // 添加统计数据
     };
 
     const jsonStr = JSON.stringify(exportData, null, 2);
