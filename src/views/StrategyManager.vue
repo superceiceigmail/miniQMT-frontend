@@ -265,7 +265,8 @@
       <div style="margin-bottom:12px;">
         <button @click="exportTradePlan" style="margin-right:8px;">导出交易计划（并更新持有状态）</button>
         <button @click="exportSuggestedHoldings" style="margin-right:8px;">导出建议持仓</button>
-        <button @click="exportRawTradePlans">导出原始交易计划</button>
+        <button @click="exportRawTradePlans" style="margin-right:8px;">导出原始交易计划</button>
+        <button @click="exportRawHoldings">导出原始持仓</button>
       </div>
       <table border="1" cellpadding="8">
         <thead>
@@ -980,31 +981,6 @@ function deleteTradePlan(index) {
   tradePlans.value.splice(index, 1)
 }
 
-function adjustPlanBasedOnFunds() {
-  if (!assetInfo.value.total_asset || !assetInfo.value.available) return
-
-  let totalBuy = 0
-  let totalSell = 0
-  finalTradePlan.value.forEach(plan => {
-    if (plan.action === '买入') {
-      totalBuy += plan.amount
-    } else {
-      totalSell += plan.amount
-    }
-  })
-
-  const currentAvailable = Number(assetInfo.value.available)
-  const postExecutionAvailable = currentAvailable - totalBuy + totalSell
-
-  if (postExecutionAvailable < 1000) {
-    const deficit = 1000 - postExecutionAvailable
-    adjustBuyPlans('shrink', deficit)
-  } else if (postExecutionAvailable > 20000) {
-    const surplus = postExecutionAvailable - 20000
-    adjustBuyPlans('stretch', surplus)
-  }
-}
-
 function adjustBuyPlans(adjustType, amount) {
   const adjustablePlans = finalTradePlan.value.filter(plan =>
     plan.action === '买入' &&
@@ -1337,9 +1313,9 @@ function exportSuggestedHoldings() {
 }
 
 /**
- * 新增：导出原始交易计划（未合并，直接表达 tradePlans 变更列表）
+ * 导出原始交易计划（未合并，直接表达 tradePlans 变更列表）
  * - 买入/卖出：各自一条记录
- * - 切换：拆成两条（卖出fromTarget、买入toTarget），更方便后端按标的聚合
+ * - 切换：拆成两条（卖出fromTarget、买入toTarget）
  * - 补充 source_type
  * - 根据 BASE_ASSET 计算 ratio
  */
@@ -1409,6 +1385,69 @@ function exportRawTradePlans() {
     }
   } catch (error) {
     console.error('导出原始交易计划时出错:', error)
+    alert('导出失败，请重试')
+  }
+}
+
+/**
+ * 导出原始持仓（不合并）
+ * - 导出所有策略中 hold === true 的标的
+ * - 每条记录都保留策略维度（strategy / source_type），未来交给后端合并
+ * - suggested_amount 使用该策略下该标的的 default_amount
+ * - ratio = suggested_amount / BASE_ASSET * 100
+ */
+function exportRawHoldings() {
+  try {
+    const denom = Number(BASE_ASSET) > 0 ? Number(BASE_ASSET) : 1
+    const planDate = getLocalDateString()
+    const exportedAt = new Date().toISOString()
+
+    const raw_holdings = []
+    ;(strategies.value.list || []).forEach(strategyName => {
+      const s = strategies.value.map[strategyName]
+      if (!s || !Array.isArray(s.targets)) return
+
+      const source_type = s.type || '未设置'
+
+      s.targets.forEach(t => {
+        if (!t || !t.name) return
+        if (!t.hold) return
+
+        const suggested_amount = Number(t.default_amount || 0)
+        raw_holdings.push({
+          strategy: strategyName,
+          source_type,
+          name: t.name,
+          suggested_amount: Number(suggested_amount.toFixed(2)),
+          ratio: Number(((suggested_amount / denom) * 100).toFixed(2)),
+          hold: true,
+          timestamp: exportedAt
+        })
+      })
+    })
+
+    const exportData = {
+      type: 'raw_holdings_export',
+      version: 1,
+      plan_date: planDate,
+      base_asset: Number(denom),
+      raw_holdings
+    }
+
+    const jsonStr = JSON.stringify(exportData, null, 2)
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(jsonStr).then(() => {
+        alert('原始持仓已复制到剪贴板！')
+      }).catch(err => {
+        console.error('复制失败:', err)
+        fallbackCopyTextToClipboard(jsonStr)
+      })
+    } else {
+      fallbackCopyTextToClipboard(jsonStr)
+    }
+  } catch (error) {
+    console.error('导出原始持仓时出错:', error)
     alert('导出失败，请重试')
   }
 }
