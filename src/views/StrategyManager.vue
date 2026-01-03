@@ -236,6 +236,7 @@
         <div v-if="targetFormError" style="color:#c00;">{{ targetFormError }}</div>
       </div>
     </div>
+
     <!-- 资金和调整信息 -->
     <div v-if="showFinalPlan && assetInfo.total_asset" class="fund-info">
       <h3>资金信息</h3>
@@ -263,7 +264,8 @@
       <h3>最终交易计划</h3>
       <div style="margin-bottom:12px;">
         <button @click="exportTradePlan" style="margin-right:8px;">导出交易计划（并更新持有状态）</button>
-        <button @click="exportSuggestedHoldings">导出建议持仓</button>
+        <button @click="exportSuggestedHoldings" style="margin-right:8px;">导出建议持仓</button>
+        <button @click="exportRawTradePlans">导出原始交易计划</button>
       </div>
       <table border="1" cellpadding="8">
         <thead>
@@ -1244,22 +1246,23 @@ function exportTradePlan() {
     const totalAsset = BASE_ASSET;
     const planDate = getLocalDateString();
 
-    // sell/buy info remain for compatibility
     const sell_stocks_info = finalTradePlan.value
       .filter(plan => plan.action === '卖出')
       .map(plan => ({
         name: plan.name,
-        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)),
-        amount: Number(plan.amount)
-      }))
+        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)), // 计算仓位比例
+        amount: Number(plan.amount), // 卖出金额
+        source_type: findSourceType(plan.name, plan.strategy) // 添加source_type字段
+      }));
 
     const buy_stocks_info = finalTradePlan.value
       .filter(plan => plan.action === '买入')
       .map(plan => ({
         name: plan.name,
-        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)),
-        amount: Number(plan.amount)
-      }))
+        ratio: Number(((plan.amount / totalAsset) * 100).toFixed(2)), // 计算仓位比例
+        amount: Number(plan.amount), // 买入金额
+        source_type: findSourceType(plan.name, plan.strategy) // 添加source_type字段
+      }));
 
     const exportData = {
       plan_date: planDate,
@@ -1284,6 +1287,18 @@ function exportTradePlan() {
     console.error('导出交易计划时出错:', error);
     alert('导出失败，请重试');
   }
+}
+
+// Helper: 找到标的来源策略的类型
+function findSourceType(targetName, strategyName) {
+  if (strategies.value.map[strategyName]) {
+    const targets = strategies.value.map[strategyName].targets;
+    const matchingTarget = targets.find(t => t.name === targetName);
+    if (matchingTarget) {
+      return strategies.value.map[strategyName].type || '未设置';
+    }
+  }
+  return '未设置'; // 如果没有找到对应策略或类型，设置默认值
 }
 
 function exportSuggestedHoldings() {
@@ -1318,6 +1333,83 @@ function exportSuggestedHoldings() {
   } catch (error) {
     console.error('导出建议持仓时出错:', error);
     alert('导出失败，请重试');
+  }
+}
+
+/**
+ * 新增：导出原始交易计划（未合并，直接表达 tradePlans 变更列表）
+ * - 买入/卖出：各自一条记录
+ * - 切换：拆成两条（卖出fromTarget、买入toTarget），更方便后端按标的聚合
+ * - 补充 source_type
+ * - 根据 BASE_ASSET 计算 ratio
+ */
+function exportRawTradePlans() {
+  try {
+    const denom = Number(BASE_ASSET) > 0 ? Number(BASE_ASSET) : 1
+    const planDate = getLocalDateString()
+
+    const raw_plans = []
+    ;(tradePlans.value || []).forEach(p => {
+      if (!p) return
+      const amount = Number(p.amount || 0)
+      const strategyName = p.strategy
+
+      if (p.action === '切换') {
+        raw_plans.push({
+          strategy: strategyName,
+          action: '卖出',
+          name: p.fromTarget,
+          amount: Number(amount.toFixed(2)),
+          ratio: Number(((amount / denom) * 100).toFixed(2)),
+          source_type: findSourceType(p.fromTarget, strategyName),
+          timestamp: p.timestamp
+        })
+        raw_plans.push({
+          strategy: strategyName,
+          action: '买入',
+          name: p.toTarget,
+          amount: Number(amount.toFixed(2)),
+          ratio: Number(((amount / denom) * 100).toFixed(2)),
+          source_type: findSourceType(p.toTarget, strategyName),
+          timestamp: p.timestamp
+        })
+        return
+      }
+
+      raw_plans.push({
+        strategy: strategyName,
+        action: p.action,
+        name: p.target,
+        amount: Number(amount.toFixed(2)),
+        ratio: Number(((amount / denom) * 100).toFixed(2)),
+        source_type: findSourceType(p.target, strategyName),
+        timestamp: p.timestamp
+      })
+    })
+
+    const exportData = {
+      type: 'raw_trade_plans_export',
+      version: 1,
+      plan_date: planDate,
+      base_asset: Number(denom),
+      raw_plans
+    }
+
+    const jsonStr = JSON.stringify(exportData, null, 2)
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(jsonStr).then(() => {
+        alert('原始交易计划已复制到剪贴板！')
+      }).catch(err => {
+        console.error('复制失败:', err)
+        fallbackCopyTextToClipboard(jsonStr)
+      })
+    } else {
+      fallbackCopyTextToClipboard(jsonStr)
+    }
+  } catch (error) {
+    console.error('导出原始交易计划时出错:', error)
+    alert('导出失败，请重试')
   }
 }
 
